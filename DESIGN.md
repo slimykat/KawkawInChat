@@ -4,6 +4,16 @@ A Twitch chat engagement extension inspired by the KawKaw enemy encounter in Del
 
 ---
 
+## ⚠️ Non-Commercial — Fan Project Notice
+
+**This project uses assets from Deltarune (sprites and voice clips, by Toby Fox / times / igbt) and MUST NEVER be monetized.**
+
+- No Bits, subscriptions, paid features, ads, donations, or any other revenue tied to this extension. The Twitch manifest reflects this: `bits.enabled` and `subscriptions.enabled` are both `false` (`extension/manifest.json`) — keep them off.
+- This is a non-commercial fan work. The Deltarune assets are the property of their creators and are used here without any claim of ownership.
+- If Twitch (or any distribution channel) requires monetization to be enabled, or the licensing situation changes, do not ship — revisit this constraint first.
+
+---
+
 ## Project Structure
 
 ```
