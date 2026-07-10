@@ -1,0 +1,136 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+#overlay {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* Canvas fills the full overlay; pixel-art rendering kept crisp at any scale */
+#kawkaw-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+/* ── Vote UI ─────────────────────────────────────────────── */
+#vote-ui {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 480px;
+  padding-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Press Start 2P', monospace;
+}
+
+#countdown-wrap {
+  width: 100%;
+  height: 6px;
+  background: rgba(255,255,255,0.2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+#countdown-bar {
+  height: 100%;
+  width: 100%;
+  background: #fff;
+  transform-origin: left center;
+  transition: width 0.25s linear;
+}
+
+#vote-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.vote-btn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  padding: 8px 16px;
+  border: 2px solid #fff;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transition: background 0.1s;
+}
+
+.vote-btn:hover { background: rgba(255,255,255,0.15); }
+.vote-btn.selected { background: rgba(255,255,255,0.3); }
+
+#vote-counts {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 80px;
+  justify-content: center;
+}
+
+.vs { color: rgba(255,255,255,0.5); font-size: 8px; }
+
+/* ── Confused bubble ─────────────────────────────────────── */
+#confused-bubble {
+  position: absolute;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 18px;
+  color: #222;
+  background: #fff;
+  border: 3px solid #222;
+  padding: 6px 10px;
+  /* tail via box-shadow pixel art trick */
+  box-shadow:
+    3px 0 0 0 #222,
+    -3px 0 0 0 #222,
+    0 3px 0 0 #222,
+    0 -3px 0 0 #222;
+  pointer-events: none;
+  /* JS positions this via left/top */
+}
+
+#confused-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 12px;
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border-left: 3px solid #222;
+  border-bottom: 3px solid #222;
+}
+
+/* ── Connection lost ─────────────────────────────────────── */
+#connection-lost {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: #fff;
+  background: rgba(180,0,0,0.8);
+  padding: 6px 10px;
+  pointer-events: none;
+}
+
+/* ── Utility ─────────────────────────────────────────────── */
+.hidden { display: none !important; }

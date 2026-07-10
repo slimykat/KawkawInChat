@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KawKaw — Streamer Config</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="config.css">
+</head>
+<body>
+  <div id="config-page">
+    <h1>KawKaw</h1>
+    <p class="subtitle" id="mode-note"></p>
+
+    <section>
+      <h2>Backend</h2>
+      <label>
+        <span>Backend URL</span>
+        <input type="url" id="backendUrl" placeholder="https://your-backend.railway.app">
+        <small>The URL of your self-hosted EBS server.</small>
+      </label>
+    </section>
+
+    <section>
+      <h2>Game</h2>
+      <label>
+        <span>Voting window <em>(seconds)</em></span>
+        <input type="number" id="intervalDuration" min="5" max="120" value="10">
+      </label>
+      <label>
+        <span>Steps to lick <em>(call wins needed)</em></span>
+        <input type="number" id="callsToWin" min="1" max="50" value="20">
+      </label>
+      <label>
+        <span>Consecutive shoos to flee</span>
+        <input type="number" id="shooesToFlee" min="1" max="20" value="5">
+      </label>
+      <label>
+        <span>Max session duration <em>(seconds)</em></span>
+        <input type="number" id="maxSessionDuration" min="60" max="3600" value="300">
+      </label>
+    </section>
+
+    <section>
+      <h2>Overlay position</h2>
+      <p class="hint">Positions are 0–1 fractions of the overlay (0 = left/top, 1 = right/bottom).</p>
+      <div class="row">
+        <label>
+          <span>Start X <em>(entrance)</em></span>
+          <input type="number" id="startPosX" min="0" max="1" step="0.01" value="0.85">
+        </label>
+        <label>
+          <span>Start Y</span>
+          <input type="number" id="startPosY" min="0" max="1" step="0.01" value="0.70">
+        </label>
+      </div>
+      <div class="row">
+        <label>
+          <span>End X <em>(streamer cam)</em></span>
+          <input type="number" id="endPosX" min="0" max="1" step="0.01" value="0.15">
+        </label>
+        <label>
+          <span>End Y</span>
+          <input type="number" id="endPosY" min="0" max="1" step="0.01" value="0.70">
+        </label>
+      </div>
+      <label>
+        <span>Sprite scale</span>
+        <input type="number" id="scale" min="1" max="6" step="0.5" value="3">
+      </label>
+    </section>
+
+    <section>
+      <h2>Preview</h2>
+      <p class="hint">Start position (solid) → end/streamer position (ghost). Reflects current values.</p>
+      <canvas id="preview-canvas" width="384" height="216"></canvas>
+    </section>
+
+    <div id="actions">
+      <button id="save-btn">Save</button>
+      <span id="save-status"></span>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+</body>
+</html>

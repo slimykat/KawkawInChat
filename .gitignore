@@ -1,0 +1,14 @@
+# Secrets — never commit real credentials (Twitch extension secret, eventsub secret, etc.)
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor cruft
+.DS_Store

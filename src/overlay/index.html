@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KawKaw</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="overlay">
+    <canvas id="kawkaw-canvas"></canvas>
+
+    <!-- Confused terminal: CSS speech bubble, positioned by game.js -->
+    <div id="confused-bubble" class="hidden">?</div>
+
+    <!-- Vote UI: visible only in Twitch Extension context -->
+    <div id="vote-ui" class="hidden">
+      <div id="countdown-wrap">
+        <div id="countdown-bar"></div>
+      </div>
+      <div id="vote-row">
+        <button type="button" id="btn-shoo" class="vote-btn" data-action="shoo">Shoo</button>
+        <div id="vote-counts">
+          <span id="count-shoo">0</span>
+          <span class="vs">vs</span>
+          <span id="count-call">0</span>
+        </div>
+        <button type="button" id="btn-call" class="vote-btn" data-action="call">Call</button>
+      </div>
+    </div>
+
+    <!-- Connection lost: visible when WebSocket cannot connect -->
+    <div id="connection-lost" class="hidden">Connection lost — please refresh</div>
+  </div>
+
+  <script src="js/sprites.js?v=3"></script>
+  <script src="js/audio.js?v=3"></script>
+  <script src="js/game.js?v=3"></script>
+  <script src="js/main.js?v=3"></script>
+</body>
+</html>
