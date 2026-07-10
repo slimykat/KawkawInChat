@@ -69,6 +69,14 @@ NyonClicker/
 
 The Twitch Developer Console hosts your uploaded frontend assets. You always self-host the backend.
 
+### Tenancy — one backend per streamer (single-tenant)
+
+**Each streamer runs their own backend instance.** The backend holds a single global `config` and a single `state` machine (`src/backend/state.js`) — it serves exactly **one channel**. A streamer points their overlay/config at their own backend via the `backendUrl` setting, and registers their own EventSub subscription against it.
+
+Do **not** point multiple channels at one backend instance: they would share one KawKaw session and overwrite each other's config. Serving many channels from one host would require a multi-tenant refactor (config + state keyed by broadcaster/channel id, with votes, EventSub, and broadcasts routed per channel) — out of scope by design.
+
+Note: **rendering config** (position, scale, entrance/exit) is per-broadcaster regardless, since it lives in the Twitch broadcaster configuration segment and is applied independently by each overlay.
+
 ---
 
 ## Backend Responsibilities
@@ -219,7 +227,7 @@ On overlay load, the frontend reads config from `Twitch.ext.configuration.get()`
 
 For OBS Browser Source (no Twitch SDK context), game-logic config is passed as URL query parameters:
 ```
-http://localhost:3000/overlay?intervalDuration=10&callsToWin=20&shooesToFlee=5&maxSessionDuration=300
+http://localhost:3000/overlay?intervalDuration=3&callsToWin=20&shooesToFlee=10&maxSessionDuration=300
 ```
 
 ---
@@ -230,9 +238,9 @@ http://localhost:3000/overlay?intervalDuration=10&callsToWin=20&shooesToFlee=5&m
 
 | Setting | Default | Description |
 |---|---|---|
-| `intervalDuration` | `10` | Seconds per voting window |
+| `intervalDuration` | `3` | Seconds per voting window (short — evokes the original's rapid button-mashing) |
 | `callsToWin` | `20` | Steps to trigger lick (matches original game's 20 stages) |
-| `shooesToFlee` | `5` | Consecutive shoo wins to trigger sad flee |
+| `shooesToFlee` | `10` | Consecutive shoo wins to trigger sad flee (streak — resets on any call win) |
 | `maxSessionDuration` | `300` | Total session seconds before confused flee |
 
 ### Rendering config (frontend only, never sent to backend)

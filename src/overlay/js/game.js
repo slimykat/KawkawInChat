@@ -226,7 +226,7 @@ function updateVoteUI(state) {
 setInterval(() => {
   if (!intervalEndsAt) return;
   const remaining = Math.max(0, intervalEndsAt - Date.now());
-  const total = (renderCfg.intervalDuration ?? 10) * 1000;
+  const total = (renderCfg.intervalDuration ?? 3) * 1000;
   countdownBar.style.width = `${(remaining / total) * 100}%`;
 }, 100);
 

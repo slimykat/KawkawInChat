@@ -1,14 +1,14 @@
 // ── URL param parsing ─────────────────────────────────────────────────────────
 // Used by OBS Browser Source. Example:
-//   http://localhost:3000/overlay?intervalDuration=10&callsToWin=20&startPosX=0.85
+//   http://localhost:3000/overlay?intervalDuration=3&callsToWin=20&startPosX=0.85
 
 const params = new URLSearchParams(location.search);
 
 const cfg = {
   // Game-logic config (also sent to backend)
-  intervalDuration:  Number(params.get('intervalDuration')  ?? 10),
+  intervalDuration:  Number(params.get('intervalDuration')  ?? 3),
   callsToWin:        Number(params.get('callsToWin')        ?? 20),
-  shooesToFlee:      Number(params.get('shooesToFlee')       ?? 5),
+  shooesToFlee:      Number(params.get('shooesToFlee')       ?? 10),
   maxSessionDuration:Number(params.get('maxSessionDuration') ?? 300),
   // Rendering config (frontend only)
   startPos: {

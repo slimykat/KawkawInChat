@@ -1,9 +1,9 @@
 const { broadcast } = require('./broadcaster');
 
 const DEFAULT_CONFIG = {
-  intervalDuration: 10,
+  intervalDuration: 3,
   callsToWin: 20,
-  shooesToFlee: 5,
+  shooesToFlee: 10,
   maxSessionDuration: 300,
 };
 
@@ -16,6 +16,8 @@ let state = idleState();
 let intervalTimer = null;
 let sessionTimer = null;
 let sessionExpired = false;
+// ponytail: coalesce vote-count broadcasts; raise interval if broadcast load still high
+let voteBroadcastTimer = null;
 
 // How long (ms) to hold the terminal phase before returning to idle
 const TERMINAL_HOLD_MS = 5000;
@@ -38,6 +40,11 @@ function idleState() {
 
 function getState() {
   return { ...state, votes: { ...state.votes }, intervalDuration: config.intervalDuration };
+}
+
+function scheduleVoteBroadcast() {
+  if (voteBroadcastTimer) return;
+  voteBroadcastTimer = setTimeout(() => { voteBroadcastTimer = null; broadcast(getState()); }, 120);
 }
 
 function setConfig(incoming) {
@@ -68,7 +75,7 @@ function startSession() {
     outcome: null,
   };
 
-  broadcast(state);
+  broadcast(getState());
   scheduleInterval();
   scheduleSessionExpiry();
   return true;
@@ -86,11 +93,12 @@ function castVote(userId, action) {
     else call++;
   }
   state.votes = { shoo, call };
-  broadcast(state);
+  scheduleVoteBroadcast();
   return true;
 }
 
 function resolveInterval() {
+  if (voteBroadcastTimer) { clearTimeout(voteBroadcastTimer); voteBroadcastTimer = null; }
   state.phase = 'resolving';
 
   const { shoo, call } = state.votes;
@@ -123,14 +131,14 @@ function resolveInterval() {
     state.phase = 'terminal';
     state.outcome = terminal;
     state.intervalEndsAt = null;
-    broadcast(state);
+    broadcast(getState());
     setTimeout(endSession, TERMINAL_HOLD_MS);
   } else {
     votes.clear();
     state.votes = { shoo: 0, call: 0 };
     state.phase = 'voting';
     state.intervalEndsAt = Date.now() + config.intervalDuration * 1000;
-    broadcast(state);
+    broadcast(getState());
     scheduleInterval();
   }
 }
@@ -143,11 +151,12 @@ function pickTerminal() {
 }
 
 function endSession() {
+  if (voteBroadcastTimer) { clearTimeout(voteBroadcastTimer); voteBroadcastTimer = null; }
   clearTimeout(intervalTimer);
   clearTimeout(sessionTimer);
   votes.clear();
   state = idleState();
-  broadcast(state);
+  broadcast(getState());
 }
 
 function scheduleInterval() {
