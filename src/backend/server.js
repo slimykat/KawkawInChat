@@ -4,12 +4,15 @@
 // Every outward connection is outbound (Twitch IRC). The only listening socket
 // is bound to loopback, so nothing here is reachable from the network.
 require('dotenv').config();
+const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const { createEngine } = require('./engine');
 const { connectChat } = require('./chat');
+const { connectEventSub } = require('./eventsub');
+const { createAuth } = require('./twitch');
 const store = require('./config');
 
 const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) ? v : d; };
@@ -24,6 +27,16 @@ if (!CHANNEL) { console.error('KawKaw: set CHANNEL in .env'); process.exit(1); }
 
 let config = store.load();
 const engine = createEngine(store.engineConfig(config));
+
+// Only needed for the redeem trigger. Without these the backend still runs —
+// chat commands need no Twitch credentials at all.
+const auth = createAuth({
+  clientId: process.env.TWITCH_CLIENT_ID,
+  clientSecret: process.env.TWITCH_CLIENT_SECRET,
+  redirectUri: `http://localhost:${PORT}/auth/callback`,
+});
+
+const redeemEnabled = () => config.trigger === 'redeem' || config.trigger === 'both';
 
 // ── Static file serving ───────────────────────────────────────────────────────
 
@@ -118,6 +131,7 @@ const server = http.createServer((req, res) => {
         // Staged, not live — the engine picks this up at the next start().
         engine.setConfig(store.engineConfig(config));
         broadcastConfig();
+        syncRedeemTrigger();   // trigger may have just been switched on or off
         sendJson(res, 200, { config, clamped });
       });
     }
@@ -125,11 +139,50 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (urlPath === '/auth/callback') return handleAuthCallback(req, res);
+
   if (urlPath === '/') { res.writeHead(302, { Location: '/overlay/' }); res.end(); return; }
   if (serveStatic(res, urlPath)) return;
 
   res.writeHead(404).end('Not found');
 });
+
+// ── One-time OAuth for the redeem trigger ─────────────────────────────────────
+
+// The only inbound step in the whole design, and it only matters for the seconds
+// between clicking the authorize link and Twitch redirecting back.
+let authState = null;
+
+function authorizeLink() {
+  authState = crypto.randomBytes(16).toString('hex');
+  return auth.authorizeUrl(authState);
+}
+
+function handleAuthCallback(req, res) {
+  const query = new URLSearchParams((req.url.split('?')[1] || ''));
+  const reply = (msg) => { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end(msg); };
+
+  if (query.get('error')) return reply(`Authorization denied: ${query.get('error_description') || query.get('error')}`);
+
+  // Pin the callback to the link we handed out, so a stray or forged redirect
+  // cannot trade in a code we never asked for.
+  if (!authState || query.get('state') !== authState) return reply('Unexpected authorization response — start again from the link the backend printed.');
+  authState = null;
+
+  const code = query.get('code');
+  if (!code) return reply('No authorization code in the callback.');
+
+  auth.exchangeCode(code)
+    .then(() => {
+      console.log('KawKaw: authorized — redeem trigger available');
+      reply('KawKaw is authorized. You can close this tab.');
+      syncRedeemTrigger();
+    })
+    .catch((err) => {
+      console.error('KawKaw: token exchange failed —', err.message);
+      reply('Token exchange failed: ' + err.message);
+    });
+}
 
 // ── State stream ──────────────────────────────────────────────────────────────
 
@@ -173,6 +226,50 @@ connectChat(CHANNEL, ({ userId, action, privileged }) => {
   }
 });
 
+// ── Redeem → engine ───────────────────────────────────────────────────────────
+
+let eventsub = null;
+
+async function syncRedeemTrigger() {
+  if (!redeemEnabled()) {
+    if (eventsub) { eventsub.close(); eventsub = null; console.log('KawKaw: redeem trigger off'); }
+    return;
+  }
+  if (eventsub) return;   // already listening
+
+  if (!auth.configured) {
+    console.warn('KawKaw: redeem trigger needs TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET in .env');
+    return;
+  }
+  if (!auth.hasTokens()) {
+    console.warn('KawKaw: redeem trigger needs one-time authorization —\n  ' + authorizeLink());
+    return;
+  }
+
+  let broadcaster;
+  try {
+    broadcaster = await auth.broadcasterId(CHANNEL);
+  } catch (err) {
+    console.error('KawKaw: could not resolve broadcaster id —', err.message);
+    return;
+  }
+
+  eventsub = connectEventSub({
+    onWelcome: (sessionId) => auth.subscribeRedemptions(sessionId, broadcaster),
+    onNotification: () => { if (redeemEnabled()) engine.start(); },
+    onStatus: (status, detail) => {
+      if (status === 'connected') console.log('KawKaw: redeem trigger listening');
+      else if (status === 'revoked') console.warn('KawKaw: EventSub subscription revoked —', detail);
+      else if (status === 'subscribe_failed') {
+        console.error('KawKaw: could not subscribe to redemptions —', detail);
+        // Almost always a dead or unscoped token; a fresh link is more useful
+        // than retrying the same failure every reconnect.
+        if (auth.configured) console.warn('  re-authorize:\n  ' + authorizeLink());
+      }
+    },
+  });
+}
+
 // One tick per second. tick() returns false while idle, so a parked backend
 // broadcasts nothing.
 setInterval(() => {
@@ -187,4 +284,5 @@ server.listen(PORT, HOST, () => {
   console.log(`  overlay  http://${HOST}:${PORT}/overlay/`);
   console.log(`  config   http://${HOST}:${PORT}/config/config.html`);
   console.log('  config  ', config);
+  syncRedeemTrigger();
 });

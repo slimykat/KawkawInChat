@@ -57,11 +57,15 @@ NyonClicker/
     └── backend/
         ├── server.js                    Loopback HTTP + WS + static; wires everything
         ├── engine.js                    Game logic: commands → meter → state
-        ├── engine.test.js
         ├── chat.js                      Anonymous Twitch IRC reader
-        ├── chat.test.js
+        ├── config.js                    Schema, validation, config.json persistence
+        ├── eventsub.js                  EventSub WebSocket client (redeem trigger)
+        ├── twitch.js                    OAuth + Helix; token storage and refresh
+        ├── *.test.js                    One self-check per module, plain assert
         ├── package.json
-        └── .env.example
+        ├── .env.example
+        ├── config.json                  written by the config page   (gitignored)
+        └── tokens.json                  OAuth tokens, 0600           (gitignored)
 ```
 
 ---
@@ -253,6 +257,10 @@ Viewer redeems reward
   → broadcast state_update
 ```
 
+The subscription is created over **WebSocket transport**, not a webhook: the backend dials out, receives a `session_welcome`, and subscribes using that session id. Twitch then delivers events down the socket the backend opened. Nothing has to be publicly reachable, and there is no callback signature to verify.
+
+Message ids are deduplicated (Twitch may redeliver), a missed keepalive forces a reconnect, and `session_reconnect` migrates to the replacement socket before dropping the old one so no event falls in the gap. Migrated sessions inherit their subscriptions and are not re-subscribed.
+
 ### State broadcast schema
 ```json
 { "type": "state_update", "state": { "...": "..." } }
@@ -318,16 +326,33 @@ npm run dev
 #   http://127.0.0.1:3000/config/config.html
 ```
 
-No tunnel, no tokens, and no Twitch registration for the chat-command trigger. The Channel Points redeem trigger additionally needs a Twitch application and a one-time authorization.
+No tunnel, no tokens, and no Twitch registration for the chat-command trigger.
+
+### Enabling the redeem trigger
+
+1. Register an application at [dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps). Set its OAuth Redirect URL to exactly `http://localhost:3000/auth/callback`.
+2. Put its client id and secret in `.env` (`TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`) — these are the only secrets the project holds.
+3. Set the trigger to `redeem` or `both` on the config page.
+4. The backend prints an authorization link. Open it once and approve; the resulting token is stored in `tokens.json` (mode `0600`) and refreshed automatically from then on.
+
+The redirect in step 4 is the **only** inbound request in the entire design, and it is live only for the seconds between clicking the link and Twitch redirecting back. It is pinned to a single-use random `state`, so a stray or forged redirect cannot trade in a code the backend never requested.
+
+If the token is later revoked, the backend drops it and prints a fresh link rather than retrying a dead credential.
 
 ### Tests
 
 ```bash
-node src/backend/engine.test.js   # game logic: meter, streak, caps, terminals
-node src/backend/chat.test.js     # IRC parsing: commands, privilege, malformed input
+for t in src/backend/*.test.js; do node "$t"; done
 ```
 
-Plain `assert`, no framework, no dependencies.
+| File | Covers |
+|---|---|
+| `engine.test.js` | Meter math, shoo streak, per-user cap, all three terminals, staged config |
+| `chat.test.js` | IRC parsing: commands, privilege badges, malformed lines |
+| `config.test.js` | Validation, clamping, partial merges, prototype pollution |
+| `eventsub.test.js` | Welcome/subscribe, dedup, reconnect migration, revocation — against a local fake Twitch |
+
+Plain `assert`, no framework, no test dependencies.
 
 ---
 
