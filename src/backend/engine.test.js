@@ -1,6 +1,6 @@
-// Runnable self-check: `node meter.test.js`. No framework — assert only.
+// Runnable self-check: `node engine.test.js`. No framework — assert only.
 const assert = require('assert');
-const { createEngine } = require('./meter.js');
+const { createEngine } = require('./engine.js');
 
 // Fixed clock so decay/terminal timing is deterministic.
 let t = 0;
@@ -57,4 +57,16 @@ assert.equal(e.getState().outcome, null, 'not yet timed out');
 e.tick(at(10000));
 assert.equal(e.getState().outcome, 'flee_confused', 'timeout with neutral meter → confused');
 
-console.log('meter.test.js: all assertions passed');
+// setConfig is staged, not live: an in-flight encounter keeps the old tuning and
+// the new values take effect at the next start().
+e.reset(); e.start(at(0));
+e.setConfig({ step: 5, decay: 0, perUserCap: 3, maxSessionDuration: 10, terminalHoldMs: 1000 });
+e.command('u1', 'call');
+e.tick(at(1000));
+assert.equal(e.getState().meter, 1, 'mid-encounter retune does not apply (still step 1)');
+e.reset(); e.start(at(0));
+e.command('u1', 'call');
+e.tick(at(1000));
+assert.equal(e.getState().meter, 5, 'staged config applies from the next start()');
+
+console.log('engine.test.js: all assertions passed');

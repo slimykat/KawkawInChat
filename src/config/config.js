@@ -88,11 +88,7 @@ function drawPreview() {
 const FIELDS = ['startPosX', 'startPosY', 'endPosX', 'endPosY', 'scale'];
 
 document.addEventListener('DOMContentLoaded', () => {
-  if (window.Twitch?.ext) {
-    initTwitch();
-  } else {
-    initLocal();
-  }
+  initLocal();
 
   document.getElementById('save-btn').addEventListener('click', onSave);
 
@@ -103,29 +99,10 @@ document.addEventListener('DOMContentLoaded', () => {
   drawPreview(); // initial draw (sprite may not be loaded yet; onload covers that case)
 });
 
-// ── Twitch Extension mode ─────────────────────────────────────────────────────
-
-function initTwitch() {
-  document.getElementById('mode-note').textContent = 'Connected to Twitch';
-  window.Twitch.ext.configuration.onChanged(loadFromTwitch);
-  loadFromTwitch();
-}
-
-function loadFromTwitch() {
-  const raw = window.Twitch.ext.configuration.broadcaster?.content;
-  if (raw) {
-    try { populateForm(JSON.parse(raw)); drawPreview(); } catch {}
-  }
-}
-
-function saveTwitch(cfg) {
-  window.Twitch.ext.configuration.set('broadcaster', '1', JSON.stringify(cfg));
-}
-
-// ── Local / dev mode ──────────────────────────────────────────────────────────
+// ── Local mode ────────────────────────────────────────────────────────────────
 
 function initLocal() {
-  document.getElementById('mode-note').textContent = 'Local mode (no Twitch SDK)';
+  document.getElementById('mode-note').textContent = 'Local';
   const saved = localStorage.getItem('kawkaw-config');
   if (saved) {
     try { populateForm(JSON.parse(saved)); drawPreview(); } catch {}
@@ -141,8 +118,7 @@ function saveLocal(cfg) {
 function onSave() {
   const cfg = getFormValues();
   try {
-    if (window.Twitch?.ext) saveTwitch(cfg);
-    else saveLocal(cfg);
+    saveLocal(cfg);
     showStatus('Saved!', 'ok');
   } catch (e) {
     showStatus('Error: ' + e.message, 'error');
