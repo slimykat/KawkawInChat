@@ -1,7 +1,12 @@
-# Secrets — never commit real credentials (Twitch extension secret, eventsub secret, etc.)
+# Secrets — never commit real credentials (Twitch app client id/secret, OAuth tokens)
 .env
 .env.*
 !.env.example
+tokens.json
+
+# Per-streamer settings written by the config page
+config.json
+config.json.tmp
 
 # Dependencies
 node_modules/

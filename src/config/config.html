@@ -16,8 +16,47 @@
     <section>
       <h2>How it works</h2>
       <p class="hint">Viewers type <strong>!call</strong> and <strong>!shoo</strong> in chat to push KawKaw
-      toward licking the streamer or fleeing. Game tuning (trigger, meter speed, session length) lives in
-      the backend's <code>.env</code> for now. This page sets where KawKaw appears on the overlay.</p>
+      toward licking the streamer or fleeing. Reaching <strong>+10</strong> is a lick, <strong>−10</strong>
+      is a flee. Changes here take effect at the <strong>next</strong> KawKaw appearance, so retuning never
+      disturbs an encounter already in progress.</p>
+    </section>
+
+    <section>
+      <h2>Session start</h2>
+      <p class="hint">How KawKaw gets summoned.</p>
+      <label>
+        <span>Trigger</span>
+        <select id="trigger">
+          <option value="command">Chat command — a mod types !kawkaw</option>
+          <option value="redeem">Channel Points redemption</option>
+          <option value="both">Either one</option>
+        </select>
+      </label>
+    </section>
+
+    <section>
+      <h2>Meter feel</h2>
+      <p class="hint">Tune so a lively chat reaches an outcome in roughly 20–40 seconds of sustained pushing.</p>
+      <div class="row">
+        <label>
+          <span>Push per message <em>(step)</em></span>
+          <input type="number" id="step" min="0.01" max="5" step="0.05" value="0.5">
+        </label>
+        <label>
+          <span>Decay per second</span>
+          <input type="number" id="decay" min="0" max="0.9" step="0.01" value="0.05">
+        </label>
+      </div>
+      <div class="row">
+        <label>
+          <span>Session timeout <em>(seconds)</em></span>
+          <input type="number" id="maxSessionDuration" min="10" max="3600" step="10" value="300">
+        </label>
+        <label>
+          <span>Max messages per viewer <em>(per second)</em></span>
+          <input type="number" id="perUserCap" min="1" max="100" step="1" value="5">
+        </label>
+      </div>
     </section>
 
     <section>

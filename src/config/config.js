@@ -84,53 +84,74 @@ function drawPreview() {
   ctx.restore();
 }
 
-// Rendering config only — game logic lives in the relay bot's .env.
-const FIELDS = ['startPosX', 'startPosY', 'endPosX', 'endPosY', 'scale'];
+// The backend validates and clamps everything; this list only decides which
+// inputs get read and written. Adding a knob is one entry here plus the markup.
+const FIELDS = [
+  'trigger',
+  'step', 'decay', 'maxSessionDuration', 'perUserCap',
+  'startPosX', 'startPosY', 'endPosX', 'endPosY', 'scale',
+];
+
+const RENDER_FIELDS = ['startPosX', 'startPosY', 'endPosX', 'endPosY', 'scale'];
 
 document.addEventListener('DOMContentLoaded', () => {
-  initLocal();
+  load();
 
   document.getElementById('save-btn').addEventListener('click', onSave);
 
   // Live preview: redraw on any position/scale change
-  for (const id of ['startPosX', 'startPosY', 'endPosX', 'endPosY', 'scale']) {
+  for (const id of RENDER_FIELDS) {
     document.getElementById(id).addEventListener('input', drawPreview);
   }
   drawPreview(); // initial draw (sprite may not be loaded yet; onload covers that case)
 });
 
-// ── Local mode ────────────────────────────────────────────────────────────────
+// ── Backend ───────────────────────────────────────────────────────────────────
 
-function initLocal() {
-  document.getElementById('mode-note').textContent = 'Local';
-  const saved = localStorage.getItem('kawkaw-config');
-  if (saved) {
-    try { populateForm(JSON.parse(saved)); drawPreview(); } catch {}
-  }
-}
-
-function saveLocal(cfg) {
-  localStorage.setItem('kawkaw-config', JSON.stringify(cfg));
-}
-
-// ── Shared ────────────────────────────────────────────────────────────────────
-
-function onSave() {
-  const cfg = getFormValues();
+async function load() {
   try {
-    saveLocal(cfg);
-    showStatus('Saved!', 'ok');
+    const res = await fetch('/api/config');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    populateForm(await res.json());
+    drawPreview();
+    setMode('Connected to the backend');
   } catch (e) {
-    showStatus('Error: ' + e.message, 'error');
+    setMode('Backend not reachable — start it, then reload');
+    showStatus('Could not load settings: ' + e.message, 'error');
   }
 }
+
+async function onSave() {
+  try {
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(getFormValues()),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+
+    // Show what the backend actually stored — values out of range come back clamped.
+    populateForm(body.config);
+    drawPreview();
+    showStatus(body.clamped?.length
+      ? `Saved — adjusted to allowed range: ${body.clamped.join(', ')}`
+      : 'Saved! Applies at the next KawKaw.', 'ok');
+  } catch (e) {
+    showStatus('Could not save: ' + e.message, 'error');
+  }
+}
+
+function setMode(text) { document.getElementById('mode-note').textContent = text; }
 
 function getFormValues() {
   const cfg = {};
   for (const key of FIELDS) {
     const el = document.getElementById(key);
     if (!el) continue;
-    cfg[key] = el.type === 'number' ? Number(el.value) : el.value.trim();
+    // Sent as strings — the backend coerces and clamps, and reads a blank as
+    // "unset" (keep the default) rather than as zero.
+    cfg[key] = el.value.trim();
   }
   return cfg;
 }

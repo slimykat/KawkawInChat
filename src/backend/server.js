@@ -10,31 +10,20 @@ const path = require('path');
 const { WebSocketServer } = require('ws');
 const { createEngine } = require('./engine');
 const { connectChat } = require('./chat');
+const store = require('./config');
 
 const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) ? v : d; };
 
-// Engine knobs: pass through ONLY what .env actually sets, so engine.js DEFAULTS stays
-// the single source for the numbers. Blank or garbage values fall through to it —
-// spreading an explicit `undefined` would clobber the default instead.
-function envEngineConfig() {
-  const out = {};
-  for (const [key, name] of Object.entries({
-    step: 'STEP', decay: 'DECAY', maxSessionDuration: 'MAX_SESSION_DURATION', perUserCap: 'PER_USER_CAP',
-  })) {
-    const raw = (process.env[name] ?? '').trim();
-    if (raw !== '' && Number.isFinite(Number(raw))) out[key] = Number(raw);
-  }
-  return out;
-}
-
+// .env holds only what the installer writes once: identity and secrets.
+// Everything tunable lives in config.json, edited through the config page.
 const CHANNEL = (process.env.CHANNEL || '').toLowerCase().replace(/^#/, '');
-const TRIGGER = process.env.TRIGGER || 'command';
 const PORT    = num('PORT', 3000);
 const HOST    = '127.0.0.1';   // loopback only — never 0.0.0.0
 
 if (!CHANNEL) { console.error('KawKaw: set CHANNEL in .env'); process.exit(1); }
 
-const engine = createEngine(envEngineConfig());
+let config = store.load();
+const engine = createEngine(store.engineConfig(config));
 
 // ── Static file serving ───────────────────────────────────────────────────────
 
@@ -84,10 +73,57 @@ function hostAllowed(req) {
 
 // ── HTTP ──────────────────────────────────────────────────────────────────────
 
+const MAX_BODY = 64 * 1024;
+
+function readJson(req, res, done) {
+  // Requiring JSON is a CSRF guard: a cross-origin <form> can only send
+  // urlencoded/multipart/plain, and anything else triggers a preflight that
+  // fails because this server emits no CORS headers.
+  if (!/^application\/json\b/.test(req.headers['content-type'] || '')) {
+    res.writeHead(415).end('Expected application/json');
+    return;
+  }
+  let size = 0;
+  const chunks = [];
+  req.on('data', (c) => {
+    size += c.length;
+    if (size > MAX_BODY) { res.writeHead(413).end('Too large'); req.destroy(); return; }
+    chunks.push(c);
+  });
+  req.on('end', () => {
+    if (res.writableEnded) return;
+    try { done(JSON.parse(Buffer.concat(chunks).toString())); }
+    catch { res.writeHead(400).end('Malformed JSON'); }
+  });
+}
+
+function sendJson(res, code, body) {
+  res.writeHead(code, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(body));
+}
+
 const server = http.createServer((req, res) => {
   if (!hostAllowed(req)) { res.writeHead(403).end('Forbidden'); return; }
 
   const urlPath = (req.url || '/').split('?')[0];
+
+  if (urlPath === '/api/config') {
+    if (req.method === 'GET') return sendJson(res, 200, config);
+    if (req.method === 'POST') {
+      return readJson(req, res, (body) => {
+        const { config: next, clamped } = store.validate(body, config);
+        try { store.save(next); }
+        catch (err) { return sendJson(res, 500, { error: `Could not save: ${err.message}` }); }
+        config = next;
+        // Staged, not live — the engine picks this up at the next start().
+        engine.setConfig(store.engineConfig(config));
+        broadcastConfig();
+        sendJson(res, 200, { config, clamped });
+      });
+    }
+    res.writeHead(405).end('Method not allowed');
+    return;
+  }
 
   if (urlPath === '/') { res.writeHead(302, { Location: '/overlay/' }); res.end(); return; }
   if (serveStatic(res, urlPath)) return;
@@ -103,24 +139,35 @@ const wss = new WebSocketServer({ server });
 wss.on('connection', (ws, req) => {
   if (!hostAllowed(req)) { ws.close(1008, 'Forbidden'); return; }
   clients.add(ws);
-  // Full state on connect, so a reloaded overlay never sits blank.
-  ws.send(JSON.stringify({ type: 'state_update', state: engine.getState() }));
+  // Render config first, then full state — so a reloaded overlay is positioned
+  // correctly before it draws anything, and never sits blank.
+  send(ws, { type: 'config', config: store.renderConfig(config) });
+  send(ws, { type: 'state_update', state: engine.getState() });
   ws.on('close', () => clients.delete(ws));
   ws.on('error', () => clients.delete(ws));
 });
 
-function broadcast(state) {
-  const message = JSON.stringify({ type: 'state_update', state });
-  for (const ws of clients) if (ws.readyState === 1 /* OPEN */) ws.send(message);
+function send(ws, msg) {
+  if (ws.readyState === 1 /* OPEN */) ws.send(JSON.stringify(msg));
+}
+
+function broadcast(msg) {
+  const text = JSON.stringify(msg);
+  for (const ws of clients) if (ws.readyState === 1) ws.send(text);
+}
+
+// Render config applies immediately — repositioning KawKaw mid-encounter is
+// harmless, unlike retuning the meter.
+function broadcastConfig() {
+  broadcast({ type: 'config', config: store.renderConfig(config) });
 }
 
 // ── Chat → engine ─────────────────────────────────────────────────────────────
 
-const allowCommandTrigger = TRIGGER === 'command' || TRIGGER === 'both';
-
 connectChat(CHANNEL, ({ userId, action, privileged }) => {
   if (action === 'kawkaw') {
-    if (allowCommandTrigger && privileged) engine.start();
+    const allowed = config.trigger === 'command' || config.trigger === 'both';
+    if (allowed && privileged) engine.start();
   } else {
     engine.command(userId, action);
   }
@@ -128,14 +175,16 @@ connectChat(CHANNEL, ({ userId, action, privileged }) => {
 
 // One tick per second. tick() returns false while idle, so a parked backend
 // broadcasts nothing.
-setInterval(() => { if (engine.tick()) broadcast(engine.getState()); }, 1000);
+setInterval(() => {
+  if (engine.tick()) broadcast({ type: 'state_update', state: engine.getState() });
+}, 1000);
 
 // An unhandled throw here would take the overlay down mid-stream; log and carry on.
 process.on('uncaughtException', (err) => console.error('KawKaw: uncaught —', err));
 
 server.listen(PORT, HOST, () => {
-  console.log(`KawKaw backend on http://${HOST}:${PORT} (channel: #${CHANNEL}, trigger: ${TRIGGER})`);
+  console.log(`KawKaw backend on http://${HOST}:${PORT}  (channel: #${CHANNEL})`);
   console.log(`  overlay  http://${HOST}:${PORT}/overlay/`);
   console.log(`  config   http://${HOST}:${PORT}/config/config.html`);
-  console.log('  engine  ', engine.config);
+  console.log('  config  ', config);
 });
