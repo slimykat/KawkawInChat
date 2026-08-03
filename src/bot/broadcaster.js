@@ -1,3 +1,6 @@
+// Fan-out to Extension overlays (Twitch PubSub) and any OBS overlay pointed at
+// the bot's WebSocket. Same message schema on both:
+//   { type: 'state_update', state: {...} }
 const crypto = require('crypto');
 const https = require('https');
 
@@ -6,15 +9,10 @@ const clients = new Set();
 let channelId = null;
 function setChannelId(id) { channelId = id; }
 
-function addClient(ws) {
-  clients.add(ws);
-}
+function addClient(ws) { clients.add(ws); }
+function removeClient(ws) { clients.delete(ws); }
 
-function removeClient(ws) {
-  clients.delete(ws);
-}
-
-// ponytail: manual HS256 — no jwt lib needed, same pattern as verifyExtensionJwt in routes/vote.js
+// Manual HS256 — no jwt lib needed.
 function b64url(buf) {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
@@ -36,15 +34,11 @@ function signPubSubJwt(base64Secret, ownerId, chanId) {
   return `${header}.${payload}.${sig}`;
 }
 
-// ponytail: live HTTP path untested — no real Twitch creds in CI.
-// To smoke-test with real creds: set all three env vars + a real channelId, call broadcastPubSub({test:1}),
-// confirm 204 from Twitch and that the extension overlay receives the PubSub message.
-// Verify: endpoint URL, JWT claims accepted by Twitch, pubsub_perms scope.
 async function broadcastPubSub(state) {
   const clientId = process.env.TWITCH_CLIENT_ID;
   const secret   = process.env.TWITCH_EXTENSION_SECRET;
   const ownerId  = process.env.TWITCH_EXTENSION_OWNER_ID;
-  if (!clientId || !secret || !ownerId || !channelId) return; // fail-safe: OBS/dev works without creds
+  if (!clientId || !secret || !ownerId || !channelId) return; // no creds → OBS-only still works
 
   const jwt  = signPubSubJwt(secret, ownerId, channelId);
   const body = JSON.stringify({
@@ -68,12 +62,9 @@ async function broadcastPubSub(state) {
           },
         },
         (res) => {
-          res.resume(); // drain
-          if (res.statusCode < 200 || res.statusCode >= 300) {
-            reject(new Error(`HTTP ${res.statusCode}`));
-          } else {
-            resolve();
-          }
+          res.resume();
+          if (res.statusCode < 200 || res.statusCode >= 300) reject(new Error(`HTTP ${res.statusCode}`));
+          else resolve();
         }
       );
       req.on('error', reject);
@@ -88,11 +79,9 @@ async function broadcastPubSub(state) {
 function broadcast(state) {
   const message = JSON.stringify({ type: 'state_update', state });
   for (const ws of clients) {
-    if (ws.readyState === 1 /* OPEN */) {
-      ws.send(message);
-    }
+    if (ws.readyState === 1 /* OPEN */) ws.send(message);
   }
-  broadcastPubSub(state).catch(() => {}); // fire-and-forget: PubSub failure never affects WS or caller
+  broadcastPubSub(state).catch(() => {}); // fire-and-forget
 }
 
 module.exports = { addClient, removeClient, broadcast, setChannelId, signPubSubJwt };

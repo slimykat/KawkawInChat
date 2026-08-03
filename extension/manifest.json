@@ -2,9 +2,9 @@
   "manifestVersion": 2,
 
   "id": "",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "name": "KawKaw",
-  "summary": "Deltarune Chapter 5 KawKaw encounter for Twitch chat. Viewers vote to Call or Shoo KawKaw each interval.",
+  "summary": "Deltarune Chapter 5 KawKaw encounter for Twitch chat. Viewers type !call or !shoo to push KawKaw toward licking the streamer or fleeing.",
   "supportEmail": "xxasap.19@gmail.com",
   "authorName": "Sizu",
 

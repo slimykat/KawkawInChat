@@ -1,6 +1,6 @@
 # KawKaw — Twitch Extension Design Document
 
-A Twitch chat engagement extension inspired by the KawKaw enemy encounter in Deltarune Chapter 5. Viewers collectively vote to Call or Shoo KawKaw each interval. Works as both a Twitch Extension overlay and an OBS Browser Source.
+A Twitch chat engagement extension inspired by the KawKaw enemy encounter in Deltarune Chapter 5. Viewers type `!call` or `!shoo` in chat to push a single meter between two outcomes — **Lick** (KawKaw reaches the streamer) and **Flee** (KawKaw is chased off). Works as both a zero-backend OBS Browser Source and a native Twitch Extension overlay.
 
 ---
 
@@ -11,6 +11,16 @@ A Twitch chat engagement extension inspired by the KawKaw enemy encounter in Del
 - No Bits, subscriptions, paid features, ads, donations, or any other revenue tied to this extension. The Twitch manifest reflects this: `bits.enabled` and `subscriptions.enabled` are both `false` (`extension/manifest.json`) — keep them off.
 - This is a non-commercial fan work. The Deltarune assets are the property of their creators and are used here without any claim of ownership.
 - If Twitch (or any distribution channel) requires monetization to be enabled, or the licensing situation changes, do not ship — revisit this constraint first.
+
+---
+
+## Interaction Model at a Glance
+
+- **Input:** viewers type `!call` (push toward Lick) or `!shoo` (push toward Flee) in Twitch chat. Spam is intentional — every message counts.
+- **State:** a single `meter` from `-10` (Flee) to `+10` (Lick). Commands are tallied on a 1-second tick and nudge the meter; it decays back toward 0 when chat quiets.
+- **Outcomes:** meter hits `+10` → **Lick**; `-10` → **Flee**; a session-timeout near neutral → **Confused flee**.
+- **Trigger:** KawKaw shows up on a chat command (`!kawkaw`) and/or a Channel Points redemption — streamer-configurable.
+- **Hosting:** OBS Browser Source runs the whole engine client-side with **no backend**. The native Twitch Extension needs one small relay bot.
 
 ---
 
@@ -34,7 +44,9 @@ NyonClicker/
 │   ├── overlay/                         Twitch Extension overlay + OBS source
 │   │   ├── index.html
 │   │   ├── js/
-│   │   │   ├── main.js                  Twitch SDK init / WebSocket fallback
+│   │   │   ├── main.js                  Host detection: OBS (direct IRC) vs Extension (PubSub)
+│   │   │   ├── chat.js                  Anonymous Twitch IRC reader (OBS path)
+│   │   │   ├── meter.js                 Shared engine: commands → meter → state (no rendering)
 │   │   │   ├── game.js                  State → canvas/DOM rendering loop
 │   │   │   ├── sprites.js               Sprite sheet coordinate map + draw helpers
 │   │   │   └── audio.js                 Web Audio API, pitch-shifted playback
@@ -42,112 +54,121 @@ NyonClicker/
 │   ├── config/                          Twitch Extension streamer config page
 │   │   ├── config.html
 │   │   └── config.js
-│   └── backend/
-│       ├── server.js                    Express + WebSocket server
-│       ├── state.js                     Game state machine + interval timer
-│       ├── broadcaster.js               Twitch PubSub + WebSocket broadcast
-│       ├── routes/
-│       │   ├── eventsub.js              EventSub webhook handler
-│       │   ├── vote.js                  Vote ingestion + per-user side tracking
-│       │   └── config.js               Streamer config API
+│   └── bot/                             Relay bot — EXTENSION PATH ONLY
+│       ├── bot.js                       IRC read + (optional) EventSub redeem, runs meter.js
+│       ├── broadcaster.js               PubSub fan-out + WebSocket clients
 │       ├── package.json
 │       └── .env.example
-├── extension/
-│   └── manifest.json                    Twitch Extension manifest
-└── package.json                         Root dev scripts
+└── extension/
+    └── manifest.json                    Twitch Extension manifest
 ```
 
----
-
-## Hosting
-
-| Component | Dev | Production |
-|---|---|---|
-| **Overlay / Config page (frontend)** | Twitch Local Test mode (loads from localhost) | Upload to Twitch CDN via Developer Console |
-| **Backend (EBS)** | Local Express server + ngrok tunnel | Railway or Render |
-| **OBS Browser Source** | Load overlay URL directly from local server | Load from production backend URL |
-
-The Twitch Developer Console hosts your uploaded frontend assets. You always self-host the backend.
-
-### Tenancy — one backend per streamer (single-tenant)
-
-**Each streamer runs their own backend instance.** The backend holds a single global `config` and a single `state` machine (`src/backend/state.js`) — it serves exactly **one channel**. A streamer points their overlay/config at their own backend via the `backendUrl` setting, and registers their own EventSub subscription against it.
-
-Do **not** point multiple channels at one backend instance: they would share one KawKaw session and overwrite each other's config. Serving many channels from one host would require a multi-tenant refactor (config + state keyed by broadcaster/channel id, with votes, EventSub, and broadcasts routed per channel) — out of scope by design.
-
-Note: **rendering config** (position, scale, entrance/exit) is per-broadcaster regardless, since it lives in the Twitch broadcaster configuration segment and is applied independently by each overlay.
+`meter.js` is the single source of game logic and is shared verbatim between the OBS overlay and the relay bot — see Architecture.
 
 ---
 
-## Backend Responsibilities
+## Architecture — one engine, two hosts
 
-The backend is the sole source of truth for game state. It does not render anything — the frontend is purely reactive.
+The game logic lives in **one module, `meter.js`**: it takes a stream of `call`/`shoo`/`kawkaw` commands and produces the authoritative `state` object. It renders nothing. The same file runs in two places depending on how the overlay is loaded.
 
-1. **Game state machine** — owns the authoritative state object, runs the interval timer, resolves votes into call/shoo wins, triggers terminal conditions
-2. **EventSub webhook handler** — receives and verifies Twitch Channel Point redemptions, starts sessions
-3. **Vote ingestion** — stores each viewer's current side, overwrites on switch, tallies at interval close
-4. **State broadcaster** — pushes state updates to all overlays via Twitch PubSub and WebSocket after every resolution
-5. **Config storage** — receives and stores game-logic config POSTed by the frontend on load
+### OBS Browser Source — zero backend
+
+The overlay connects a browser `WebSocket` directly to Twitch chat **anonymously** (`wss://irc-ws.chat.twitch.tv:443`, login `justinfan<random>`, no token, no password), `JOIN`s the configured channel, and parses commands out of `PRIVMSG` lines. `meter.js` runs in the overlay itself; `game.js` renders its state.
+
+**Streamer setup, in full:** add a Browser Source in OBS pointing at the overlay URL with `?channel=<name>`. No server, no auth, no deploy, no EventSub.
+
+Channel-point redeem trigger is **not** available on this path (redemptions require an authenticated EventSub subscription, which a client-side page cannot hold). OBS-only uses the chat-command trigger. An OBS streamer who wants redeem triggers can opt into running the relay bot (below) and point the overlay at it.
+
+### Native Twitch Extension — one relay bot
+
+A Twitch Extension runs under a strict CSP and cannot open the IRC socket, so it can't read chat directly. One small always-on **relay bot** (`src/bot/`) does it instead:
+
+1. Reads chat (anonymous IRC) for `!call` / `!shoo` / `!kawkaw`.
+2. Optionally holds an authenticated **EventSub** subscription for the Channel Points redeem trigger.
+3. Runs the **authoritative** `meter.js` (the meter is time-based — decay and timeout — so it must have a single owner; independent clients would drift).
+4. Broadcasts the resulting `state` to all Extension overlays via **Twitch PubSub** after every tick that changes it.
+
+Extension overlays are dumb renderers: they receive `state` and draw it. They never compute the meter.
+
+### Tenancy — one bot per streamer (single-tenant)
+
+The relay bot holds a single `config` and a single `state` — it serves exactly **one channel**. Each streamer runs their own bot instance and points their Extension at it. Do not point multiple channels at one bot; they would share one KawKaw session. (The OBS path is inherently single-instance — one browser source, one channel.)
+
+Rendering config (position, scale) is per-broadcaster regardless, since it lives in the Twitch broadcaster configuration segment and is applied independently by each overlay.
 
 ---
 
 ## Game Flow
 
-### Session trigger
-A streamer creates a Channel Points reward (e.g., "KawKaw Visit!"). When a viewer redeems it, Twitch fires an EventSub webhook to the backend. If no session is already active, a new session starts, the Emerge animation plays on all overlays, and voting begins.
+### Session trigger (configurable)
 
-### Per-interval voting
-Once a session is active, a voting window opens for a configurable duration. All viewers see **Shoo** and **Call** buttons. Each viewer has a current side and may switch freely at any time during the interval. When the timer expires:
+KawKaw is idle until triggered. The streamer configures which triggers are live via the `trigger` setting:
 
-- **Call majority** → KawKaw moves one step closer to the streamer. Eye level resets to 0. Consecutive-shoo counter resets to 0. Happy animation plays. A random happy sound plays.
-- **Shoo majority** → Eye level grows by one. Consecutive-shoo counter increments. Idle body remains; only the eye overlay changes. A pitched-down `sad_short` sound plays.
-- **Tie / no votes** → No position or eye change. Contributes toward the confused outcome if the session timer runs out.
+| `trigger` | How a session starts | Requires |
+|---|---|---|
+| `command` | A broadcaster or mod types `!kawkaw` in chat | Nothing (works on both hosts) |
+| `redeem` | A viewer redeems a Channel Points reward | The relay bot (authenticated EventSub) |
+| `both` | Either of the above | Redeem path needs the bot |
 
-A new voting window opens immediately after resolution unless a terminal condition is reached.
+On trigger, if idle: the **Emerge** animation plays, `meter` resets to 0, the session-timeout clock starts, and `phase` becomes `active`.
+
+### Active session — the meter
+
+While active, viewers push the meter with chat commands. Commands are batched on a **1-second tick**:
+
+```js
+push = calls − shoos                                    // net commands this tick (spam counts)
+meter = clamp(meter * (1 - DECAY) + push * STEP, -10, 10)
+shooStreak = push > 0 ? 0 : push < 0 ? shooStreak + 1 : shooStreak   // resets on any call tick
+```
+
+- `!call` pushes toward **+10 (Lick)** — KawKaw advances on the streamer, happy.
+- `!shoo` pushes toward **−10 (Flee)** — KawKaw retreats, sad crying eyes swell.
+- **Decay** pulls the meter back toward 0 each tick, so chat must *sustain* a push to reach a terminal. (Set `DECAY = 0` to make the meter hold its position instead.)
+
+Everything on screen is derived from three fields: `meter` drives position; `shooStreak` drives the sad-eye size and down-pitch; the last tick's `push` drives the happy/sad reaction. No other counters exist.
 
 ### Terminal outcomes
 
 | Outcome | Condition |
 |---|---|
-| **Lick** | KawKaw reaches the streamer (`position` reaches 0) |
-| **Fled (sad)** | Consecutive shoos ≥ `shooesToFlee` |
-| **Fled (confused)** | `maxSessionDuration` expires — current interval finishes resolving first, then session ends |
+| **Lick** | `meter` reaches `+10` |
+| **Flee (sad)** | `meter` reaches `−10` |
+| **Flee (confused)** | `maxSessionDuration` expires with the meter still short of either end |
 
-After any terminal outcome the session returns to idle and KawKaw disappears from the overlay.
+After any terminal, KawKaw plays its exit, the session returns to `idle`, and KawKaw disappears from the overlay.
 
 ---
 
 ## State Object
 
-Broadcast to all connected overlays on every change:
+The complete authoritative state. On the Extension path this is what the bot broadcasts; on the OBS path the overlay holds it locally. Everything visual is derived from it — no other counters exist.
 
 ```js
 {
-  phase: 'idle' | 'voting' | 'resolving' | 'terminal',
+  phase: 'idle' | 'active' | 'terminal',
 
-  // Game logic position: callsToWin = far/entrance, 0 = at streamer
-  // Moves one step toward 0 per call win. Does not move on shoo.
-  position: 20,
+  // Single game axis. -10 = Flee, +10 = Lick, 0 = neutral. Float.
+  meter: 0,
 
-  // Shoo eye size overlay (0 = normal, 4 = maximum)
-  // Resets to 0 on any call win
-  eyeLevel: 0,
+  // Net push applied on the last tick (calls − shoos), for animation
+  // direction/intensity. Positive = called, negative = shooed.
+  push: 0,
 
-  // Consecutive shoo wins without a call win in between
-  // Used for audio pitch shift; resets to 0 on any call win
-  consecutiveShoos: 0,
-
-  totalCalls: 0,          // call wins this session
-  totalShoos: 0,          // shoo wins this session
-  lastAction: null,       // 'call' | 'shoo' | null
-
-  votes: { shoo: 0, call: 0 },
-  intervalEndsAt: null,   // ms timestamp for countdown display
+  // Consecutive net-shoo ticks with no call in between. Drives the sad-eye
+  // level AND the audio down-pitch; resets to 0 on any net-call tick.
+  // Distinct from the meter: a streak, not a magnitude, and it snaps back on call.
+  shooStreak: 0,
 
   // Set only at terminal, null otherwise
-  outcome: null           // 'lick' | 'fled_sad' | 'fled_confused'
+  outcome: null,          // 'lick' | 'flee_sad' | 'flee_confused'
+
+  // ms timestamp the session auto-ends (confused flee); null when idle
+  endsAt: null
 }
 ```
+
+Derived at render time (not stored): screen position `= (meter + 10) / 20` (meter-driven). The crying-eye level `= clamp(shooStreak, 0, 4)` and audio pitch `= 2^(-shooStreak / 12)` are **streak**-driven — they track consecutive shoos, not meter magnitude, and both reset the moment chat calls.
 
 ---
 
@@ -160,16 +181,18 @@ Animations used in this extension:
 | Animation | Frames | When used |
 |---|---|---|
 | **Emerge** | 3 | Session start — KawKaw appears on stream |
-| **Idle** | 2 | Default body during voting and shoo reactions |
-| **Happy** | 3 | Call interval win, plays during position advance |
-| **Dig** | 3 | `fled_sad` and `fled_confused` terminals — KawKaw leaves |
+| **Idle** | 2 | Default body while active |
+| **Happy** | 3 | Positive `push` tick — KawKaw is being called toward Lick |
+| **Dig** | 3 | `flee_sad` and `flee_confused` terminals — KawKaw leaves |
 | **Tongue Start** | 2 | Lick terminal build-up |
 | **Tongue** | 2 | Lick terminal finale |
-| **Eye** ×4 sizes | 1 each | Composited over Idle body; size corresponds to `eyeLevel` (0 = no overlay, 1–4 = increasing sizes) |
+| **Eye** ×4 sizes | 1 each | **Sad crying** overlay composited over Idle; size = `clamp(shooStreak, 0, 4)` — grows one step per consecutive shoo tick, resets to 0 (no overlay) the moment chat calls |
+
+The crying eyes swell as chat **shoos** KawKaw toward fleeing, and are **removed** as chat **calls** it back toward licking. On the positive side there is no eye overlay — KawKaw advances happily.
 
 Unused animations on the sheet: Bobhead, Blow Wind, Hurt, Hurt 2, Small (Idle variant), Pet, Moa, and all bullet sprites.
 
-Rendering: a `<canvas>` element draws the body sprite then composites the eye overlay on top. Frame cycling runs via `requestAnimationFrame`. Precise pixel coordinates are mapped in `sprites.js` and measured from the sheet.
+Rendering: a `<canvas>` draws the body sprite then composites the eye overlay on top. Frame cycling runs via `requestAnimationFrame`. Precise pixel coordinates are mapped in `sprites.js`.
 
 **Confused terminal:** Idle body + a CSS `?` speech bubble overlay rendered in Press Start 2P font. No dedicated sprite needed.
 
@@ -179,115 +202,132 @@ Rendering: a `<canvas>` element draws the body sprite then composites the eye ov
 
 | File | When played |
 |---|---|
-| `happy_1` / `happy_2` | Random pick on each call interval win |
-| `sad_short` | Each shoo interval win (pitch shifts down with consecutive shoos) |
-| `sad_1` / `sad_2` | Random pick when `fled_sad` terminal is reached |
+| `happy_1` / `happy_2` | Random pick on a positive `push` tick (called toward Lick) |
+| `sad_short` | On a negative `push` tick (shooed); pitch shifts down the more negative the meter |
+| `sad_1` / `sad_2` | Random pick when `flee_sad` terminal is reached |
 | `licking_1` / `licking_2` / `licking_3` | Random pick when `lick` terminal is reached |
 
 Unused files: `hurt`, `licking_short` — carried over from source assets, not used.
 
-**Pitch shift formula** (Web Audio API `playbackRate`):
+**Pitch shift** (Web Audio API `playbackRate`), driven by the meter on the negative side:
 ```js
-source.playbackRate.value = Math.pow(2, -consecutiveShoos / 12);
-// Each consecutive shoo = -1 semitone. Resets to 1.0 on any call win.
+source.playbackRate.value = Math.pow(2, meter / 12);  // meter < 0 → pitched down
+// meter = -12 would be one octave down; clamped range -10..0 keeps it musical.
 ```
 
 ---
 
 ## Communication
 
-### Channel point redemption → session start
+### Chat command ingestion
+```
+Viewer types !call / !shoo (or mod types !kawkaw)
+  → OBS path:       overlay's anonymous IRC socket receives the PRIVMSG
+  → Extension path: relay bot's IRC socket receives it
+  → meter.js batches commands on a 1s tick and updates `state`
+  → OBS: game.js renders directly
+    Extension: bot broadcasts state_update via PubSub → overlays render
+```
+
+### Channel-point redeem trigger (bot only)
 ```
 Viewer redeems reward
-  → Twitch sends POST /eventsub
-  → Backend verifies HMAC-SHA256 signature
-  → If idle: load stored config, start session, broadcast state_update to all overlays
+  → Twitch sends EventSub notification to the relay bot
+  → Bot verifies the signature; if idle and trigger allows redeem: start session
+  → Broadcast state_update
 ```
 
-### Viewer vote
-```
-Viewer clicks Shoo or Call button
-  → POST /vote { action, userId } with Twitch Extension JWT
-  → Backend stores userId → action, overwriting any previous vote for this interval
-  → Interval timer fires → count each side → resolve majority → broadcast state_update
-  → Overlays animate + play audio
-```
-
-### OBS Browser Source fallback
-When `window.Twitch?.ext` is not present (OBS or browser tab context), the overlay connects via a plain `WebSocket` to the backend. The backend maintains both Twitch PubSub and a WebSocket broadcast list. Message schema is identical in both transports:
-
+### State broadcast schema (Extension path)
+Identical over PubSub and the bot's WebSocket (if used):
 ```json
 { "type": "state_update", "state": { "...": "..." } }
 ```
 
-**Reconnection:** The client retries the WebSocket connection every 5 seconds. On successful reconnect, the backend immediately sends the full current state. If the connection cannot be established, the overlay displays a "Connection lost — please refresh" message.
+### Reconnection
+- **OBS IRC:** the overlay retries the anonymous IRC connection every 5s; on reconnect it re-`JOIN`s and resumes reading. Meter state is local, so nothing is lost across a brief drop.
+- **Extension PubSub:** the bot re-sends full current state on overlay (re)connect. If the overlay cannot reach the bot, it shows "Connection lost — please refresh."
 
 ### Config delivery
-On overlay load, the frontend reads config from `Twitch.ext.configuration.get()` and POSTs the game-logic fields to `POST /config` on the backend. The backend stores this config and uses it when the next session starts.
 
-For OBS Browser Source (no Twitch SDK context), game-logic config is passed as URL query parameters:
-```
-http://localhost:3000/overlay?intervalDuration=3&callsToWin=20&shooesToFlee=10&maxSessionDuration=300
-```
+Game-logic and rendering config travel by **separate routes and never mix** — the config page cannot set game logic:
+
+| | Game logic (`step`, `decay`, …) | Rendering (positions, scale) |
+|---|---|---|
+| **Extension** | relay bot's `.env` | config page → `configuration.set()` → overlay |
+| **OBS** | URL query params | URL query params |
+
+The config page is rendering-only by design. The bot has no access to the broadcaster configuration segment (reading it needs a signed Helix `GET /extensions/configurations` call), and the OBS path has no Twitch configuration at all — so `.env` and query params are the only channels that reach the engine.
+
+Defaults for every game-logic value live in **one place**: `DEFAULTS` in `src/overlay/js/meter.js`. `.env` and query params override individual keys; anything unset, blank, or unparseable falls through to that object rather than being restated per host. The bot logs its resolved config on startup.
+- **OBS:** game-logic config is passed as URL query params on the browser source:
+  ```
+  http://localhost:8080/overlay?channel=NAME&step=0.5&decay=0.05&maxSessionDuration=300&perUserCap=5
+  ```
 
 ---
 
 ## Streamer Config
 
-### Game-logic config (stored on backend)
+### Game-logic config
+
+Set via the bot's `.env` (Extension) or URL query params (OBS) — **not** the config page. Defaults are owned by `meter.js`; the table below mirrors them for reference.
 
 | Setting | Default | Description |
 |---|---|---|
-| `intervalDuration` | `3` | Seconds per voting window (short — evokes the original's rapid button-mashing) |
-| `callsToWin` | `20` | Steps to trigger lick (matches original game's 20 stages) |
-| `shooesToFlee` | `10` | Consecutive shoo wins to trigger sad flee (streak — resets on any call win) |
-| `maxSessionDuration` | `300` | Total session seconds before confused flee |
+| `trigger` | `command` | `command` \| `redeem` \| `both` — how a session starts (redeem needs the bot) |
+| `step` | `0.5` | Meter units per net command per tick — how hard one message pushes |
+| `decay` | `0.05` | Fraction the meter relaxes toward 0 each tick when unpushed; `0` = hold |
+| `maxSessionDuration` | `300` | Seconds before a stalled session ends in confused flee |
+| `perUserCap` | `5` | Max commands counted per viewer per tick — stops one spammer soloing the meter |
 
-### Rendering config (frontend only, never sent to backend)
+`step` and `decay` together set the pace: tune so a lively chat reaches a terminal in ~20–40s of sustained pushing. These are the primary feel knobs.
+
+### Rendering config (frontend only)
 
 | Setting | Description |
 |---|---|
-| `startPosition` | Screen coordinate where KawKaw enters the overlay |
-| `endPosition` | Screen coordinate of the streamer (where lick triggers) |
+| `startPosition` | Screen coordinate for the Flee end of the track (`meter = -10`) |
+| `endPosition` | Screen coordinate of the streamer, the Lick end (`meter = +10`) |
 
-KawKaw's visual position is interpolated between `startPosition` and `endPosition` based on `position / callsToWin`.
-
-Config is saved via `Twitch.ext.configuration.set()` on the streamer's dashboard.
+KawKaw's on-screen position interpolates between these using `(meter + 10) / 20`. On the Extension, saved via `Twitch.ext.configuration.set()`; in OBS, passed as query params.
 
 ---
 
 ## Implementation Order
 
-1. Backend scaffold — Express + WebSocket, `.env.example`
-2. Game state machine — state object, interval timer, transition logic
-3. EventSub route — HMAC verification, session trigger
-4. Vote route — per-user side storage, tally at interval close, resolution
-5. Config route — receive and store game-logic config from frontend
-6. Broadcaster — Twitch PubSub + WS fan-out, full state on WS reconnect
-7. Frontend overlay — HTML, CSS (canvas, vote buttons, countdown bar, confused bubble, connection-lost message)
-8. Sprite engine — `sprites.js` coordinate map, canvas draw, frame animation (Emerge, Idle, Happy, Dig, Tongue Start, Tongue, Eye overlays)
-9. Audio engine — `audio.js`, Web Audio API, pitch-shift playback
-10. Game renderer — `game.js`, state updates → animations + audio calls
-11. Transport layer — `main.js`, Twitch SDK init + WS fallback with auto-retry
-12. Config page — streamer dashboard settings UI
-13. Extension manifest — `extension/manifest.json` for Twitch packaging
+1. `meter.js` — the shared engine: command batching, tick, meter update, terminals. Standalone and unit-testable.
+2. `chat.js` — anonymous Twitch IRC reader (connect, JOIN, parse `!call`/`!shoo`/`!kawkaw`).
+3. Frontend overlay — HTML, CSS (canvas, meter/countdown display, confused bubble, connection-lost message).
+4. Sprite engine — `sprites.js` coordinate map, canvas draw, frame animation (Emerge, Idle, Happy, Dig, Tongue Start, Tongue, crying Eye overlays).
+5. Audio engine — `audio.js`, Web Audio API, pitch-shift playback.
+6. Game renderer — `game.js`, state → animations + audio; position from `meter`, eye size and pitch from `shooStreak`.
+7. Transport layer — `main.js`, host detection: OBS (wire `chat.js` → `meter.js` → `game.js`) vs Extension (PubSub → `game.js`).
+8. Relay bot — `src/bot/`, IRC read + authoritative `meter.js` + PubSub broadcast; optional EventSub redeem trigger, `.env.example`.
+9. Config page — streamer dashboard settings UI (trigger, step, decay, timeout, cap, positions).
+10. Extension manifest — `extension/manifest.json` for Twitch packaging.
 
 ---
 
-## Dev Setup (once implementation begins)
+## Dev Setup
 
+### OBS path (no backend)
 ```bash
-# Backend
-cd src/backend
+# Serve the overlay statically (any static server)
+npx serve src/overlay        # or python3 -m http.server
+
+# In OBS: add a Browser Source →
+#   http://localhost:8080/overlay/index.html?channel=YOURCHANNEL
+```
+No tokens, no tunnel. The overlay reads chat anonymously.
+
+### Extension path (relay bot)
+```bash
+cd src/bot
 npm install
-cp .env.example .env   # fill in Twitch credentials
+cp .env.example .env          # channel name; Twitch creds only if using redeem trigger
 npm run dev
 
-# Tunnel for EventSub (Twitch must reach your server)
+# Tunnel only if using the Channel Points redeem trigger (EventSub must reach the bot)
 ngrok http 3000
-
-# Overlay (as OBS Browser Source)
-# Open http://localhost:3000/overlay in OBS Browser Source
 ```
-
-Register the ngrok URL as your EventSub webhook URL in the Twitch Developer Console and create a Channel Points reward to trigger sessions.
+Register the ngrok URL as the EventSub webhook and create a Channel Points reward only if you enable the `redeem` trigger. The `command` trigger needs none of this.

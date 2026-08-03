@@ -84,13 +84,8 @@ function drawPreview() {
   ctx.restore();
 }
 
-const FIELDS = [
-  'backendUrl',
-  'intervalDuration', 'callsToWin', 'shooesToFlee', 'maxSessionDuration',
-  'startPosX', 'startPosY', 'endPosX', 'endPosY', 'scale',
-];
-
-const GAME_LOGIC_FIELDS = ['intervalDuration', 'callsToWin', 'shooesToFlee', 'maxSessionDuration'];
+// Rendering config only — game logic lives in the relay bot's .env.
+const FIELDS = ['startPosX', 'startPosY', 'endPosX', 'endPosY', 'scale'];
 
 document.addEventListener('DOMContentLoaded', () => {
   if (window.Twitch?.ext) {
@@ -123,9 +118,8 @@ function loadFromTwitch() {
   }
 }
 
-async function saveTwitch(cfg) {
+function saveTwitch(cfg) {
   window.Twitch.ext.configuration.set('broadcaster', '1', JSON.stringify(cfg));
-  await pushToBackend(cfg);
 }
 
 // ── Local / dev mode ──────────────────────────────────────────────────────────
@@ -138,41 +132,21 @@ function initLocal() {
   }
 }
 
-async function saveLocal(cfg) {
+function saveLocal(cfg) {
   localStorage.setItem('kawkaw-config', JSON.stringify(cfg));
-  await pushToBackend(cfg);
 }
 
 // ── Shared ────────────────────────────────────────────────────────────────────
 
-async function onSave() {
+function onSave() {
   const cfg = getFormValues();
   try {
-    if (window.Twitch?.ext) {
-      await saveTwitch(cfg);
-    } else {
-      await saveLocal(cfg);
-    }
+    if (window.Twitch?.ext) saveTwitch(cfg);
+    else saveLocal(cfg);
     showStatus('Saved!', 'ok');
   } catch (e) {
     showStatus('Error: ' + e.message, 'error');
   }
-}
-
-async function pushToBackend(cfg) {
-  const url = cfg.backendUrl;
-  if (!url) return;
-
-  const body = {};
-  for (const key of GAME_LOGIC_FIELDS) body[key] = cfg[key];
-
-  const res = await fetch(`${url}/config`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) throw new Error(`Backend responded ${res.status}`);
 }
 
 function getFormValues() {

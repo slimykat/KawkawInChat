@@ -14,32 +14,10 @@
     <p class="subtitle" id="mode-note"></p>
 
     <section>
-      <h2>Backend</h2>
-      <label>
-        <span>Backend URL</span>
-        <input type="url" id="backendUrl" placeholder="https://your-backend.railway.app">
-        <small>The URL of your self-hosted EBS server.</small>
-      </label>
-    </section>
-
-    <section>
-      <h2>Game</h2>
-      <label>
-        <span>Voting window <em>(seconds)</em></span>
-        <input type="number" id="intervalDuration" min="1" max="120" value="3">
-      </label>
-      <label>
-        <span>Steps to lick <em>(call wins needed)</em></span>
-        <input type="number" id="callsToWin" min="1" max="50" value="20">
-      </label>
-      <label>
-        <span>Consecutive shoos to flee</span>
-        <input type="number" id="shooesToFlee" min="1" max="20" value="10">
-      </label>
-      <label>
-        <span>Max session duration <em>(seconds)</em></span>
-        <input type="number" id="maxSessionDuration" min="60" max="3600" value="300">
-      </label>
+      <h2>How it works</h2>
+      <p class="hint">Viewers type <strong>!call</strong> and <strong>!shoo</strong> in chat to push KawKaw
+      toward licking the streamer or fleeing. Game tuning (trigger, meter speed, session length) lives in
+      your relay bot's <code>.env</code>. This page sets where KawKaw appears on the overlay.</p>
     </section>
 
     <section>

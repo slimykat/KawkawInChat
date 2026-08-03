@@ -22,71 +22,47 @@ html, body {
   image-rendering: pixelated;
 }
 
-/* ── Vote UI ─────────────────────────────────────────────── */
-#vote-ui {
+/* ── Meter HUD ───────────────────────────────────────────── */
+#meter {
   position: absolute;
-  bottom: 0;
+  bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
-  width: 480px;
-  padding-bottom: 16px;
+  width: 60%;
+  max-width: 640px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 10px;
   font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: #fff;
 }
 
-#countdown-wrap {
-  width: 100%;
-  height: 6px;
-  background: rgba(255,255,255,0.2);
-  border-radius: 3px;
-  overflow: hidden;
+.meter-end { flex: 0 0 auto; text-shadow: 0 0 3px #000, 0 0 3px #000; }
+.meter-end.shoo { color: #8ab4ff; }
+.meter-end.call { color: #ff9a6a; }
+
+#meter-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 8px;
+  background: linear-gradient(90deg, rgba(138,180,255,0.5), rgba(255,255,255,0.25), rgba(255,154,106,0.5));
+  border: 1px solid rgba(255,255,255,0.4);
+  border-radius: 4px;
 }
 
-#countdown-bar {
-  height: 100%;
-  width: 100%;
+#meter-marker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
   background: #fff;
-  transform-origin: left center;
-  transition: width 0.25s linear;
+  border: 2px solid #222;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: left 0.9s linear;
 }
-
-#vote-row {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.vote-btn {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 10px;
-  padding: 8px 16px;
-  border: 2px solid #fff;
-  background: rgba(0,0,0,0.6);
-  color: #fff;
-  cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  transition: background 0.1s;
-}
-
-.vote-btn:hover { background: rgba(255,255,255,0.15); }
-.vote-btn.selected { background: rgba(255,255,255,0.3); }
-
-#vote-counts {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 10px;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 80px;
-  justify-content: center;
-}
-
-.vs { color: rgba(255,255,255,0.5); font-size: 8px; }
 
 /* ── Confused bubble ─────────────────────────────────────── */
 #confused-bubble {

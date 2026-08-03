@@ -15,29 +15,22 @@
     <!-- Confused terminal: CSS speech bubble, positioned by game.js -->
     <div id="confused-bubble" class="hidden">?</div>
 
-    <!-- Vote UI: visible only in Twitch Extension context -->
-    <div id="vote-ui" class="hidden">
-      <div id="countdown-wrap">
-        <div id="countdown-bar"></div>
-      </div>
-      <div id="vote-row">
-        <button type="button" id="btn-shoo" class="vote-btn" data-action="shoo">Shoo</button>
-        <div id="vote-counts">
-          <span id="count-shoo">0</span>
-          <span class="vs">vs</span>
-          <span id="count-call">0</span>
-        </div>
-        <button type="button" id="btn-call" class="vote-btn" data-action="call">Call</button>
-      </div>
+    <!-- Meter HUD: Flee ◀ ────●──── ▶ Lick. Marker position = meter. -->
+    <div id="meter" class="hidden">
+      <span class="meter-end shoo">SHOO</span>
+      <div id="meter-track"><div id="meter-marker"></div></div>
+      <span class="meter-end call">CALL</span>
     </div>
 
-    <!-- Connection lost: visible when WebSocket cannot connect -->
+    <!-- Shown when chat can't be reached (OBS) or the bot is unreachable -->
     <div id="connection-lost" class="hidden">Connection lost — please refresh</div>
   </div>
 
-  <script src="js/sprites.js?v=3"></script>
-  <script src="js/audio.js?v=3"></script>
-  <script src="js/game.js?v=3"></script>
-  <script src="js/main.js?v=3"></script>
+  <script src="js/sprites.js?v=4"></script>
+  <script src="js/audio.js?v=4"></script>
+  <script src="js/meter.js?v=4"></script>
+  <script src="js/chat.js?v=4"></script>
+  <script src="js/game.js?v=4"></script>
+  <script src="js/main.js?v=4"></script>
 </body>
 </html>

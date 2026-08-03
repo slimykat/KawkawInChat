@@ -1,138 +1,82 @@
-// ── URL param parsing ─────────────────────────────────────────────────────────
-// Used by OBS Browser Source. Example:
-//   http://localhost:3000/overlay?intervalDuration=3&callsToWin=20&startPosX=0.85
+// Transport wiring. Two hosts:
+//   OBS  — run the engine locally, fed by anonymous IRC (zero backend).
+//   Twitch Extension — render state broadcast by the relay bot over PubSub.
+//
+// OBS example:
+//   .../overlay/index.html?channel=YOURCHANNEL&step=0.5&decay=0.05
 
 const params = new URLSearchParams(location.search);
 
+// Numeric query param, or `dflt` when absent/blank/unparseable. Never yields NaN —
+// one bad param would otherwise poison the meter permanently.
+function qs(key, dflt) {
+  const raw = (params.get(key) ?? '').trim();
+  return raw !== '' && Number.isFinite(Number(raw)) ? Number(raw) : dflt;
+}
+
+// Engine knobs: pass through ONLY what the URL sets, so meter.js DEFAULTS stays the
+// single source for the numbers (an explicit `undefined` would clobber them).
+const engineCfg = {};
+for (const key of ['step', 'decay', 'maxSessionDuration', 'perUserCap']) {
+  const v = qs(key, undefined);
+  if (v !== undefined) engineCfg[key] = v;
+}
+
 const cfg = {
-  // Game-logic config (also sent to backend)
-  intervalDuration:  Number(params.get('intervalDuration')  ?? 3),
-  callsToWin:        Number(params.get('callsToWin')        ?? 20),
-  shooesToFlee:      Number(params.get('shooesToFlee')       ?? 10),
-  maxSessionDuration:Number(params.get('maxSessionDuration') ?? 300),
-  // Rendering config (frontend only)
-  startPos: {
-    x: Number(params.get('startPosX') ?? 0.85),
-    y: Number(params.get('startPosY') ?? 0.70),
-  },
-  endPos: {
-    x: Number(params.get('endPosX') ?? 0.15),
-    y: Number(params.get('endPosY') ?? 0.70),
-  },
-  scale: Number(params.get('scale') ?? 3),
+  channel: (params.get('channel') || '').toLowerCase(),
+  trigger: params.get('trigger') || 'command',
+  ...engineCfg,
+  // Render defaults — mirrored in game.js renderCfg for the no-param case.
+  startPos: { x: qs('startPosX', 0.85), y: qs('startPosY', 0.70) },
+  endPos:   { x: qs('endPosX',   0.15), y: qs('endPosY',   0.70) },
+  scale:    qs('scale', 3),
 };
 
-// Push rendering config into game.js
-setRenderConfig(cfg);
+setRenderConfig({ startPos: cfg.startPos, endPos: cfg.endPos, scale: cfg.scale });
 
-// Backend URL: same origin in OBS mode, overridable via ?backendUrl=
-const backendUrl = params.get('backendUrl') ?? location.origin;
+// OBS Browser Source allows autoplay; the Extension stays silent until a gesture.
+initAudio();
 
-// ── Config delivery to backend ────────────────────────────────────────────────
+const connLost = document.getElementById('connection-lost');
 
-async function pushConfig() {
-  try {
-    await fetch(`${backendUrl}/config`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        intervalDuration:   cfg.intervalDuration,
-        callsToWin:         cfg.callsToWin,
-        shooesToFlee:       cfg.shooesToFlee,
-        maxSessionDuration: cfg.maxSessionDuration,
-      }),
-    });
-  } catch (e) {
-    console.warn('KawKaw: failed to push config to backend', e);
-  }
+if (window.Twitch?.ext) {
+  initExtension();
+} else {
+  initOBS();
 }
 
-// ── Vote handling ─────────────────────────────────────────────────────────────
+// ── OBS: local engine + anonymous chat ────────────────────────────────────────
 
-let twitchAuthToken = null;
-
-async function sendVote(action) {
-  let userId;
-
-  if (window.Twitch?.ext) {
-    userId = window.Twitch.ext.viewer.opaqueId;
-  } else if (params.get('dev') === 'true') {
-    // Dev mode: stable random ID per session
-    userId = sessionStorage.getItem('devUserId') ?? crypto.randomUUID();
-    sessionStorage.setItem('devUserId', userId);
-  } else {
-    return; // OBS display-only mode — no voting
+function initOBS() {
+  if (!cfg.channel) {
+    connLost.textContent = 'No channel — add ?channel=yourname to the URL';
+    connLost.classList.remove('hidden');
+    return;
   }
 
-  const headers = { 'Content-Type': 'application/json' };
-  if (window.Twitch?.ext && twitchAuthToken) {
-    headers['Authorization'] = 'Bearer ' + twitchAuthToken;
-  }
+  const engine = KawKawEngine.createEngine(cfg);
+  const allowCommandTrigger = cfg.trigger === 'command' || cfg.trigger === 'both';
 
-  try {
-    await fetch(`${backendUrl}/vote`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ action, userId }),
-    });
-    document.querySelectorAll('.vote-btn').forEach(b =>
-      b.classList.toggle('selected', b.dataset.action === action)
-    );
-  } catch (e) {
-    console.warn('KawKaw: vote failed', e);
-  }
-}
-
-document.getElementById('btn-shoo').addEventListener('click', () => {
-  initAudio();
-  sendVote('shoo');
-});
-document.getElementById('btn-call').addEventListener('click', () => {
-  initAudio();
-  sendVote('call');
-});
-
-// ── Twitch Extension transport ────────────────────────────────────────────────
-
-function applyTwitchConfig() {
-  let saved;
-  try {
-    const raw = window.Twitch.ext.configuration.broadcaster?.content;
-    saved = raw ? JSON.parse(raw) : null;
-  } catch { saved = null; }
-
-  if (saved) {
-    // Merge flat saved fields into cfg so pushConfig() sends streamer's values
-    if (saved.intervalDuration  != null) cfg.intervalDuration   = saved.intervalDuration;
-    if (saved.callsToWin        != null) cfg.callsToWin         = saved.callsToWin;
-    if (saved.shooesToFlee      != null) cfg.shooesToFlee        = saved.shooesToFlee;
-    if (saved.maxSessionDuration!= null) cfg.maxSessionDuration  = saved.maxSessionDuration;
-
-    // Map flat pos fields to nested shape expected by setRenderConfig
-    setRenderConfig({
-      startPos: { x: saved.startPosX ?? cfg.startPos.x, y: saved.startPosY ?? cfg.startPos.y },
-      endPos:   { x: saved.endPosX   ?? cfg.endPos.x,   y: saved.endPosY   ?? cfg.endPos.y   },
-      scale:    saved.scale           ?? cfg.scale,
-      callsToWin:       cfg.callsToWin,
-      intervalDuration: cfg.intervalDuration,
-    });
-  }
-}
-
-function initTwitch() {
-  setVoteButtonsVisible(true);
-
-  window.Twitch.ext.onAuthorized((auth) => { twitchAuthToken = auth.token; });
-
-  applyTwitchConfig();
-  pushConfig();
-
-  // Re-apply if streamer saves new settings while overlay is live
-  window.Twitch.ext.configuration.onChanged(() => {
-    applyTwitchConfig();
-    pushConfig();
+  connectChat(cfg.channel, {
+    onStatus: (s) => connLost.classList.toggle('hidden', s === 'open'),
+    onCommand: ({ userId, action, privileged }) => {
+      if (action === 'kawkaw') {
+        if (allowCommandTrigger && privileged) engine.start();
+      } else {
+        engine.command(userId, action);
+      }
+    },
   });
 
+  // One tick per second — matches Twitch PubSub's 1 msg/sec ceiling too.
+  setInterval(() => { if (engine.tick()) onStateUpdate(engine.getState()); }, 1000);
+}
+
+// ── Twitch Extension: render bot broadcasts ───────────────────────────────────
+
+function initExtension() {
+  applyTwitchConfig();
+  window.Twitch.ext.configuration.onChanged(applyTwitchConfig);
   window.Twitch.ext.listen('broadcast', (_target, _contentType, message) => {
     try {
       const { type, state } = JSON.parse(message);
@@ -141,49 +85,18 @@ function initTwitch() {
   });
 }
 
-// ── WebSocket transport (OBS Browser Source) ──────────────────────────────────
+// Rendering config lives in the broadcaster configuration segment (per-broadcaster).
+function applyTwitchConfig() {
+  let saved;
+  try {
+    const raw = window.Twitch.ext.configuration.broadcaster?.content;
+    saved = raw ? JSON.parse(raw) : null;
+  } catch { saved = null; }
+  if (!saved) return;
 
-const connLost = document.getElementById('connection-lost');
-let ws = null;
-let wsRetryTimer = null;
-
-function connectWS() {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}`);
-
-  ws.addEventListener('open', () => {
-    connLost.classList.add('hidden');
-    clearTimeout(wsRetryTimer);
-    wsRetryTimer = null;
+  setRenderConfig({
+    startPos: { x: saved.startPosX ?? cfg.startPos.x, y: saved.startPosY ?? cfg.startPos.y },
+    endPos:   { x: saved.endPosX   ?? cfg.endPos.x,   y: saved.endPosY   ?? cfg.endPos.y   },
+    scale:    saved.scale ?? cfg.scale,
   });
-
-  ws.addEventListener('message', (e) => {
-    try {
-      const { type, state } = JSON.parse(e.data);
-      if (type === 'state_update') onStateUpdate(state);
-    } catch {}
-  });
-
-  ws.addEventListener('close',   scheduleReconnect);
-  ws.addEventListener('error',   scheduleReconnect);
-}
-
-function scheduleReconnect() {
-  if (wsRetryTimer) return;
-  connLost.classList.remove('hidden');
-  wsRetryTimer = setTimeout(() => {
-    wsRetryTimer = null;
-    connectWS();
-  }, 5000);
-}
-
-// ── Entry point ───────────────────────────────────────────────────────────────
-
-if (window.Twitch?.ext) {
-  initTwitch();
-} else {
-  // OBS / dev: vote buttons only in dev mode
-  setVoteButtonsVisible(params.get('dev') === 'true');
-  pushConfig();
-  connectWS();
 }
