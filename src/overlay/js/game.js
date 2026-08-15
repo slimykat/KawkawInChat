@@ -170,7 +170,10 @@ function renderLoop(ts) {
 
   syncSize();
   ctx.clearRect(0, 0, viewW, viewH);
-  ctx.imageSmoothingEnabled = false;
+  // Smoothing on: the hand-drawn sheet's 480px cells are drawn *down* to ~250px,
+  // and nearest-neighbour on a downscale throws away half the linework. This was
+  // false for the pixel-art sheet, where every draw was a clean integer upscale.
+  ctx.imageSmoothingEnabled = true;
 
   if (kawPos && slide) {
     // Exiting: constant speed, ignoring the meter target it left behind.

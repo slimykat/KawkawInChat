@@ -1,31 +1,38 @@
-// Grid constants — each cell is 50×50px content with a 1px frame border.
-// Cell stride = 51px (50 content + 1 border, shared between adjacent cells).
-// Col 0 = label column. First sprite column (col 1) content starts at x = 52.
-// Row n content starts at y = n * 51 + 1.
-const CELL = 51;
-const COL1 = CELL + 1; // x-origin of first sprite column = 52
+// ── Sheet geometry ────────────────────────────────────────────────────────────
+// The hand-drawn sheet is a plain 480px grid — no cell borders, and column 0 is
+// an empty label column kept from the layout of the sheet it was drawn over.
+// So row n starts at y = n * CELL, and sprite column c at x = c * CELL.
+//
+// 480 was measured off the art rather than assumed: it captures 100% of the
+// sheet's ink, and it puts the dry eye's centre at fraction (0.466, 0.709) of
+// its cell against (0.480, 0.710) on the original — the giveaway that the grid
+// is right.
+const CELL = 480;
 
-// Body animation definitions.
-// x/y = content origin of frame 0.  stride = px between frame origins (51).
-// Dig is not in kawkaw_framed.png — add it when the sprite is available.
+// Sprites are 50×50 in *design* space no matter what resolution the sheet is
+// exported at. `scale` in the streamer config multiplies this, not the source
+// cell, so re-exporting the art at a different size moves only the source rects
+// and leaves every saved config meaning what it did.
+const FRAME = 50;
+
+// Body animation definitions. `row` indexes the sheet; `w`/`h` are design size,
+// deliberately not the source cell size — game.js multiplies them by `scale` to
+// place and size the sprite.
+const anim = (row, frames, fps, loop) => ({ row, frames, fps, loop, w: FRAME, h: FRAME });
+
 const ANIMS = {
-  idle:        { x: COL1, y: CELL * 1 + 1, w: 50, h: 50, stride: CELL, frames: 2, fps: 6,  loop: true  },
-  happy:       { x: COL1, y: CELL * 2 + 1, w: 50, h: 50, stride: CELL, frames: 1, fps: 6,  loop: true  },
-  dig:         { x: COL1, y: CELL * 6 + 1, w: 50, h: 50, stride: CELL, frames: 3, fps: 8,  loop: false },
-  emerge:      { x: COL1, y: CELL * 3 + 1, w: 50, h: 50, stride: CELL, frames: 3, fps: 8,  loop: false },
-  tongueStart: { x: COL1, y: CELL * 4 + 1, w: 50, h: 50, stride: CELL, frames: 1, fps: 6,  loop: false },
-  tongue:      { x: COL1, y: CELL * 5 + 1, w: 50, h: 50, stride: CELL, frames: 2, fps: 6,  loop: true  },
+  idle:        anim(1, 2, 6, true),
+  happy:       anim(2, 1, 6, true),
+  dig:         anim(6, 3, 8, false),
+  emerge:      anim(3, 3, 8, false),
+  tongueStart: anim(4, 1, 6, false),
+  tongue:      anim(5, 2, 6, true),
 };
 
-// Eye overlay sprites — row 0 (y=1), cols 1–4. Col 1 is dry; cols 2–4 add the
+// Eye overlay sprites — row 0, cols 1–4. Col 1 is dry; cols 2–4 add the
 // teardrop and differ only in where the white shine sits, giving the eye a glint
 // as the streak runs. They are all the same size — the swelling is not in the art.
-const EYE_FRAMES = [
-  { x: COL1,            y: 1, w: 50, h: 50 },
-  { x: COL1 + CELL,     y: 1, w: 50, h: 50 },
-  { x: COL1 + CELL * 2, y: 1, w: 50, h: 50 },
-  { x: COL1 + CELL * 3, y: 1, w: 50, h: 50 },
-];
+const EYE_FRAMES = [1, 2, 3, 4].map((col) => ({ col, row: 0 }));
 
 // Eye overlay is designed to sit flush with the body sprite's top-left corner.
 const EYE_OFFSET = { x: 0, y: 0 };
@@ -35,24 +42,26 @@ const EYE_OFFSET = { x: 0, y: 0 };
 // deliberately broken, since a fractional scale cannot land on it.
 //
 // Growth is centred on the eyeball, not the cell, or the eye would slide toward
-// the bottom-right as it grew. Measured off the sheet: the dry eye's opaque
-// pixels span x19–29, y31–40 inside the 50×50 cell.
-const EYE_ANCHOR = { x: 24, y: 35.5 };
+// the bottom-right as it grew. Measured off the sheet: the dry eye's ink spans
+// x172–275, y291–390 inside its 480px cell → centre (223.5, 340.5), which is
+// (23.3, 35.5) in design px.
+const EYE_ANCHOR = { x: 23.3, y: 35.5 };
 const EYE_GROWTH = 0.3;        // extra scale per consecutive shoo tick
 const EYE_GROWTH_MAX = 2.2;    // ceiling, so a long streak can't swallow the body
 
 const sheet = new Image();
-sheet.src = '/assets/kawkaw/kawkaw_framed.png';
+sheet.src = '/assets/kawkaw/KawKawSprite_HandDrawn.png';
 
 function drawSprite(ctx, animName, frame, dx, dy, scale) {
-  const anim = ANIMS[animName];
-  if (!anim || !sheet.complete) return;
+  const a = ANIMS[animName];
+  if (!a || !sheet.complete) return;
 
-  const f = frame % anim.frames;
-  const sx = anim.x + f * (anim.stride ?? anim.w);
-  const sy = anim.y;
-
-  ctx.drawImage(sheet, sx, sy, anim.w, anim.h, dx, dy, anim.w * scale, anim.h * scale);
+  const f = frame % a.frames;
+  ctx.drawImage(
+    sheet,
+    (1 + f) * CELL, a.row * CELL, CELL, CELL,
+    dx, dy, FRAME * scale, FRAME * scale,
+  );
 }
 
 // `shooStreak` is the raw consecutive-shoo count, not clamped: the frame stops
@@ -69,10 +78,10 @@ function drawEye(ctx, shooStreak, dx, dy, scale) {
 
   ctx.drawImage(
     sheet,
-    e.x, e.y, e.w, e.h,
+    e.col * CELL, e.row * CELL, CELL, CELL,
     ox, oy,
-    e.w * scale * grow,
-    e.h * scale * grow,
+    FRAME * scale * grow,
+    FRAME * scale * grow,
   );
 }
 

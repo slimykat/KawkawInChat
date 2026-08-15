@@ -6,12 +6,16 @@ const CANVAS_W  = 1280; // matches overlay
 const CANVAS_H  = 720;
 const SCALE_F   = PREVIEW_W / CANVAS_W; // 0.3 — maps overlay coords to preview px
 
-// Idle frame 0 source rect from kawkaw_framed.png (matches sprites.js ANIMS.idle)
-const IDLE_SRC = { x: 52, y: 52, w: 50, h: 50 };
+// Idle frame 0 on the hand-drawn sheet — 480px grid, col 0 is an empty label
+// column, so row 1 / col 1 is at (480, 480). Mirrors sprites.js; FRAME is the
+// design size `scale` multiplies, which is not the source cell size.
+const CELL     = 480;
+const FRAME    = 50;
+const IDLE_SRC = { x: CELL, y: CELL, w: CELL, h: CELL };
 
 // ponytail: absolute path works when served by the backend; breaks if opened as a local file://
 const previewSheet = new Image();
-previewSheet.src = '/assets/kawkaw/kawkaw_framed.png';
+previewSheet.src = '/assets/kawkaw/KawKawSprite_HandDrawn.png';
 previewSheet.onload = drawPreview;
 
 function drawPreview() {
@@ -32,7 +36,7 @@ function drawPreview() {
   const flip = flipEl ? flipEl.value === '1' : false;
 
   ctx.clearRect(0, 0, PREVIEW_W, PREVIEW_H);
-  ctx.imageSmoothingEnabled = false;
+  ctx.imageSmoothingEnabled = true;   // downscaled hand-drawn art — see game.js
 
   // Travel path line. KawKaw emerges at meter 0 — the midpoint — and the two ends
   // are only where chat can push it to, so the spawn point gets its own marker.
@@ -48,8 +52,8 @@ function drawPreview() {
   ctx.stroke();
   ctx.restore();
 
-  const spriteW = IDLE_SRC.w * sc * SCALE_F;
-  const spriteH = IDLE_SRC.h * sc * SCALE_F;
+  const spriteW = FRAME * sc * SCALE_F;
+  const spriteH = FRAME * sc * SCALE_F;
 
   // Standing at `px`, mirrored/rotated about its own centre — same transform the
   // overlay applies, so what you see here is what OBS draws.
