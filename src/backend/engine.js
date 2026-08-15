@@ -7,12 +7,15 @@
 // State object (see DESIGN.md):
 //   { phase, meter, push, shooStreak, outcome, endsAt }
 
+// Tuned on stream, not derived. With decay 0 the meter holds what chat gives it,
+// so a terminal is a flat 10 net commands rather than a rate chat has to sustain —
+// reachable by a small chat, and the knob to raise for a big one.
 const DEFAULTS = {
-  step: 0.5,               // meter units per net command per tick
-  decay: 0.05,             // fraction the meter relaxes toward 0 each tick
-  maxSessionDuration: 300, // seconds before a stalled session → confused flee
+  step: 1,                 // meter units per net command per tick
+  decay: 0,                // fraction the meter relaxes toward 0 each tick; 0 = hold
+  maxSessionDuration: 60,  // seconds before a stalled session → confused flee
   perUserCap: 5,           // max net commands counted per viewer per tick
-  terminalHoldMs: 5000,    // how long to hold a terminal before returning to idle
+  terminalHoldMs: 1500,    // how long to hold a terminal before returning to idle
 };
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);

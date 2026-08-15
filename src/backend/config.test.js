@@ -1,6 +1,6 @@
 // Runnable self-check: `node config.test.js`. No framework — assert only.
 const assert = require('assert');
-const { validate, defaults, engineConfig, renderConfig } = require('./config.js');
+const { validate, defaults, engineConfig, renderConfig, rewardMatches } = require('./config.js');
 const { DEFAULTS: ENGINE } = require('./engine.js');
 
 // Defaults are not restated — engine numbers come from engine.js.
@@ -61,5 +61,43 @@ assert.deepEqual(Object.keys(engineConfig(c)).sort(),
 assert.equal(engineConfig(c).startPosX, undefined, 'render keys stay out of the engine');
 assert.deepEqual(renderConfig(c).startPos, { x: 0.2, y: 0.70 });
 assert.equal(renderConfig(c).scale, 4);
+
+// Orientation: flipX is stored 0/1 but reaches the overlay as a boolean, and the
+// overlay needs terminalHoldMs to time the exit animation.
+assert.equal(renderConfig(validate({ flipX: '1' }).config).flipX, true, 'mirrored');
+assert.equal(renderConfig(validate({ flipX: '0' }).config).flipX, false, 'normal');
+assert.equal(renderConfig(c).terminalHoldMs, ENGINE.terminalHoldMs, 'exit timing reaches the overlay');
+assert.equal(validate({ rotation: 400 }).config.rotation, 180, 'rotation clamped');
+assert.equal(validate({ rotation: -90 }).config.rotation, -90, 'negative rotation kept');
+
+// Volume is a percent; the overlay divides by 100, so a bad value must not reach it as NaN.
+assert.equal(defaults().volume, 100, 'full volume by default');
+assert.equal(validate({ volume: 250 }).config.volume, 100, 'volume clamped to 100');
+assert.equal(validate({ volume: 0 }).config.volume, 0, 'muting is allowed');
+assert.equal(validate({ volume: 'loud' }).config.volume, 100, 'garbage falls back, never NaN');
+
+// Who may summon: open to chat by default, restrictable to mods.
+assert.equal(defaults().summonBy, 'everyone', 'anyone can summon out of the box');
+assert.equal(validate({ summonBy: 'mods' }).config.summonBy, 'mods');
+assert.equal(validate({ summonBy: 'subs' }).config.summonBy, 'everyone', 'unknown falls back to open');
+
+// Reward title is free text: trimmed, length-capped, and blank is a real value.
+assert.equal(defaults().rewardTitle, 'KawKaw');
+assert.equal(validate({ rewardTitle: '  Summon KawKaw  ' }).config.rewardTitle, 'Summon KawKaw', 'trimmed');
+assert.deepEqual(validate({ rewardTitle: 'KawKaw' }).clamped, [], 'an unchanged title is not "adjusted"');
+assert.deepEqual(validate({ rewardTitle: ' KawKaw ' }).clamped, ['rewardTitle'], 'trimming is reported');
+assert.equal(validate({ rewardTitle: 'x'.repeat(200) }).config.rewardTitle.length, 80, 'length capped');
+assert.equal(validate({ rewardTitle: '' }).config.rewardTitle, '', 'blank is kept — it means "any reward"');
+assert.equal(validate({ rewardTitle: 42 }).config.rewardTitle, 'KawKaw', 'non-string falls back');
+
+// Matching: substring, case-insensitive, blank matches everything.
+const named = validate({ rewardTitle: 'KawKaw' }).config;
+assert.ok(rewardMatches(named, 'KawKaw'), 'exact');
+assert.ok(rewardMatches(named, 'Summon kawkaw!'), 'substring, any case');
+assert.ok(!rewardMatches(named, 'Hydrate'), 'an unrelated reward must not start an encounter');
+assert.ok(!rewardMatches(named, undefined), 'a reward with no title never matches a named filter');
+const anyReward = validate({ rewardTitle: '' }).config;
+assert.ok(rewardMatches(anyReward, 'Hydrate'), 'blank filter accepts anything');
+assert.ok(rewardMatches(anyReward, undefined), 'blank filter tolerates a missing title');
 
 console.log('config.test.js: all assertions passed');

@@ -22,18 +22,23 @@ function drawPreview() {
   // Defaults match overlay renderCfg
   // ponytail: NaN-only fallback so explicit 0 is preserved (|| would coerce 0 to default)
   const num = (id, dflt) => { const v = parseFloat(document.getElementById(id).value); return isNaN(v) ? dflt : v; };
-  const sx  = num('startPosX', 0.85);
+  const sx  = num('startPosX', 0.10);
   const sy  = num('startPosY', 0.70);
-  const ex  = num('endPosX',   0.15);
+  const ex  = num('endPosX',   0.80);
   const ey  = num('endPosY',   0.70);
-  const sc  = num('scale',     3);
+  const sc  = num('scale',     5);
+  const rot = num('rotation',  0);
+  const flipEl = document.getElementById('flipX');
+  const flip = flipEl ? flipEl.value === '1' : false;
 
   ctx.clearRect(0, 0, PREVIEW_W, PREVIEW_H);
   ctx.imageSmoothingEnabled = false;
 
-  // Travel path line
+  // Travel path line. KawKaw emerges at meter 0 — the midpoint — and the two ends
+  // are only where chat can push it to, so the spawn point gets its own marker.
   const startPx = { x: sx * PREVIEW_W, y: sy * PREVIEW_H };
   const endPx   = { x: ex * PREVIEW_W, y: ey * PREVIEW_H };
+  const spawnPx = { x: (startPx.x + endPx.x) / 2, y: (startPx.y + endPx.y) / 2 };
   ctx.save();
   ctx.strokeStyle = 'rgba(167,139,250,0.3)';
   ctx.setLineDash([4, 4]);
@@ -46,53 +51,59 @@ function drawPreview() {
   const spriteW = IDLE_SRC.w * sc * SCALE_F;
   const spriteH = IDLE_SRC.h * sc * SCALE_F;
 
-  // End position — ghost/semi-transparent
+  // Standing at `px`, mirrored/rotated about its own centre — same transform the
+  // overlay applies, so what you see here is what OBS draws.
+  function drawKaw(px, fill) {
+    const cy = px.y - spriteH / 2;
+    ctx.save();
+    ctx.translate(px.x, cy);
+    if (rot) ctx.rotate((rot * Math.PI) / 180);
+    if (flip) ctx.scale(-1, 1);
+    ctx.translate(-px.x, -cy);
+    if (previewSheet.complete && previewSheet.naturalWidth) {
+      ctx.drawImage(previewSheet, IDLE_SRC.x, IDLE_SRC.y, IDLE_SRC.w, IDLE_SRC.h,
+        px.x - spriteW / 2, px.y - spriteH, spriteW, spriteH);
+    } else {
+      ctx.fillStyle = fill;
+      ctx.fillRect(px.x - spriteW / 2, px.y - spriteH, spriteW, spriteH);
+    }
+    ctx.restore();
+  }
+
+  function label(text, px, color) {
+    ctx.save();
+    ctx.font = '7px monospace';
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.fillText(text, px.x, px.y - spriteH - 3);
+    ctx.restore();
+  }
+
+  // The two ends chat can push to — ghosts, since KawKaw only reaches them if it loses
+  // or wins. Drawn first so the spawn marker overlaps them if the track is short.
   ctx.save();
   ctx.globalAlpha = 0.35;
-  if (previewSheet.complete && previewSheet.naturalWidth) {
-    ctx.drawImage(previewSheet, IDLE_SRC.x, IDLE_SRC.y, IDLE_SRC.w, IDLE_SRC.h,
-      endPx.x - spriteW / 2, endPx.y - spriteH, spriteW, spriteH);
-  } else {
-    ctx.fillStyle = 'rgba(167,139,250,0.5)';
-    ctx.fillRect(endPx.x - spriteW / 2, endPx.y - spriteH, spriteW, spriteH);
-  }
+  drawKaw(startPx, 'rgba(167,139,250,0.5)');
+  drawKaw(endPx,   'rgba(167,139,250,0.5)');
   ctx.restore();
+  label('FLEE', startPx, 'rgba(167,139,250,0.7)');
+  label('LICK', endPx,   'rgba(167,139,250,0.7)');
 
-  // "END" label
-  ctx.save();
-  ctx.font = '7px monospace';
-  ctx.fillStyle = 'rgba(167,139,250,0.7)';
-  ctx.textAlign = 'center';
-  ctx.fillText('END', endPx.x, endPx.y - spriteH - 3);
-  ctx.restore();
-
-  // Start position — solid sprite
-  if (previewSheet.complete && previewSheet.naturalWidth) {
-    ctx.drawImage(previewSheet, IDLE_SRC.x, IDLE_SRC.y, IDLE_SRC.w, IDLE_SRC.h,
-      startPx.x - spriteW / 2, startPx.y - spriteH, spriteW, spriteH);
-  } else {
-    ctx.fillStyle = '#c084fc';
-    ctx.fillRect(startPx.x - spriteW / 2, startPx.y - spriteH, spriteW, spriteH);
-  }
-
-  // "START" label
-  ctx.save();
-  ctx.font = '7px monospace';
-  ctx.fillStyle = '#c084fc';
-  ctx.textAlign = 'center';
-  ctx.fillText('START', startPx.x, startPx.y - spriteH - 3);
-  ctx.restore();
+  // Where KawKaw actually emerges — solid, because this is what you see first.
+  drawKaw(spawnPx, '#c084fc');
+  label('APPEARS', spawnPx, '#c084fc');
 }
 
 // The backend validates and clamps everything; this list only decides which
 // inputs get read and written. Adding a knob is one entry here plus the markup.
 const FIELDS = [
-  'trigger',
-  'step', 'decay', 'maxSessionDuration', 'perUserCap',
-  'startPosX', 'startPosY', 'endPosX', 'endPosY', 'scale',
+  'trigger', 'summonBy', 'rewardTitle',
+  'step', 'decay', 'maxSessionDuration', 'perUserCap', 'terminalHoldMs',
+  'startPosX', 'startPosY', 'endPosX', 'endPosY', 'scale', 'flipX', 'rotation',
+  'volume',
 ];
 
-const RENDER_FIELDS = ['startPosX', 'startPosY', 'endPosX', 'endPosY', 'scale'];
+const RENDER_FIELDS = ['startPosX', 'startPosY', 'endPosX', 'endPosY', 'scale', 'flipX', 'rotation'];
 
 document.addEventListener('DOMContentLoaded', () => {
   load();

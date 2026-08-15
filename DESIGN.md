@@ -125,8 +125,8 @@ KawKaw is idle until triggered. The streamer chooses which triggers are live via
 
 | `trigger` | How a session starts |
 |---|---|
-| `command` | A broadcaster or mod types `!kawkaw` in chat |
-| `redeem` | A viewer redeems a Channel Points reward |
+| `command` | Someone types `!kawkaw` in chat — anyone, or mods only, per `summonBy` |
+| `redeem` | A viewer redeems a Channel Points reward whose name matches `rewardTitle` |
 | `both` | Either of the above |
 
 On trigger, if idle: the **Emerge** animation plays, `meter` resets to 0, the session-timeout clock starts, and `phase` becomes `active`.
@@ -158,7 +158,18 @@ Everything on screen derives from three fields: `meter` drives position; `shooSt
 | **Flee (sad)** | `meter` reaches `−10` |
 | **Flee (confused)** | `maxSessionDuration` expires with the meter still short of either end |
 
-After any terminal, KawKaw plays its exit, the session holds briefly (`terminalHoldMs`), then returns to `idle` and disappears.
+Each terminal fills `terminalHoldMs`, then the session returns to `idle`:
+
+| Outcome | Exit |
+|---|---|
+| **Lick** | Tongue plays for the hold, then **Dig** — timed so the dig lands exactly as the session ends |
+| **Flee (sad)** | **Slides off screen** at a constant 700 px/s, heading derived from `startPos − endPos`, so it leaves the way it came in. No dig |
+| **Flee (confused)** | `?` bubble for the hold, then **Dig** |
+
+The slide is constant-speed rather than eased. The position easing moves a fraction of the
+*remaining* distance each frame, so an off-screen target makes the first frames enormous and
+KawKaw vanishes in ~2 frames instead of sliding. A track with `startPos == endPos` defines no
+heading, so that case digs away instead.
 
 ---
 
@@ -203,12 +214,18 @@ Derived at render time (not stored): screen position `= (meter + 10) / 20`, mete
 | **Emerge** | 3 | Session start — KawKaw appears on stream |
 | **Idle** | 2 | Default body while active |
 | **Happy** | 3 | Positive `push` tick — KawKaw is being called toward Lick |
-| **Dig** | 3 | `flee_sad` and `flee_confused` terminals — KawKaw leaves |
+| **Dig** | 3 | `lick` and `flee_confused` terminals — KawKaw burrows away. (`flee_sad` slides off screen instead) |
 | **Tongue Start** | 2 | Lick terminal build-up |
 | **Tongue** | 2 | Lick terminal finale |
-| **Eye** ×4 sizes | 1 each | **Sad crying** overlay composited over Idle; size = `clamp(shooStreak, 0, 4)` — grows one step per consecutive shoo tick, resets to 0 (no overlay) the moment chat calls |
+| **Eye** ×4 | 1 each | **Sad crying** overlay composited over Idle. Frame 1 is dry, 2–4 add the teardrop and differ only in where the white shine sits. Shown from `shooStreak ≥ 1`, cleared the moment chat calls |
 
 The crying eyes swell as chat **shoos** KawKaw toward fleeing, and are **removed** as chat **calls** it back toward licking. On the positive side there is no eye overlay — KawKaw advances happily.
+
+The swelling is **not in the art** — all four eye frames are the same size. `drawEye` scales the
+overlay by `1 + (shooStreak − 1) × 0.3`, capped at `2.2×`, centred on the eyeball at cell
+coordinate `(24, 35.5)` so it grows in place instead of sliding toward the corner. This is the one
+place the overlay's pixel alignment with the body is deliberately broken: a fractional scale cannot
+land on the body's grid. Frames stop advancing after the fourth, but the growth continues to the cap.
 
 Unused animations on the sheet: Bobhead, Blow Wind, Hurt, Hurt 2, Small (Idle variant), Pet, Moa, and all bullet sprites.
 
@@ -253,9 +270,15 @@ Viewer types !call / !shoo (or a mod types !kawkaw)
 ```
 Viewer redeems reward
   → Twitch pushes the event down the backend's outbound EventSub WebSocket
-  → if idle and `trigger` allows redeem: engine.start()
+  → if idle, `trigger` allows redeem, and the reward name matches: engine.start()
   → broadcast state_update
 ```
+
+The subscription covers **every** custom reward on the channel — the EventSub condition
+only accepts a reward *id*, and binding to one would mean a reward picker in the config
+page plus a stale id every time the streamer recreates the reward. The `rewardTitle`
+filter is applied to the incoming event instead, so changing it takes effect immediately
+without re-subscribing.
 
 The subscription is created over **WebSocket transport**, not a webhook: the backend dials out, receives a `session_welcome`, and subscribes using that session id. Twitch then delivers events down the socket the backend opened. Nothing has to be publicly reachable, and there is no callback signature to verify.
 
@@ -290,25 +313,62 @@ Defaults are owned by `DEFAULTS` in `src/backend/engine.js` — the single place
 | Setting | Default | Description |
 |---|---|---|
 | `trigger` | `command` | `command` \| `redeem` \| `both` — how a session starts |
-| `step` | `0.5` | Meter units per net command per tick — how hard one message pushes |
-| `decay` | `0.05` | Fraction the meter relaxes toward 0 each tick when unpushed; `0` = hold |
-| `maxSessionDuration` | `300` | Seconds before a stalled session ends in confused flee |
+| `summonBy` | `everyone` | `everyone` \| `mods` — who may type `!kawkaw` |
+| `rewardTitle` | `KawKaw` | Which Channel Points reward counts; substring, case-insensitive, blank = any |
+| `step` | `1` | Meter units per net command per tick — how hard one message pushes |
+| `decay` | `0` | Fraction the meter relaxes toward 0 each tick when unpushed; `0` = hold |
+| `maxSessionDuration` | `60` | Seconds before a stalled session ends in confused flee |
 | `perUserCap` | `5` | Max commands counted per viewer per tick — stops one spammer soloing the meter |
-| `terminalHoldMs` | `5000` | How long a terminal holds on screen before returning to idle |
+| `terminalHoldMs` | `1500` | How long a terminal holds on screen before returning to idle |
 
-`step` and `decay` together set the pace: tune so a lively chat reaches a terminal in ~20–40s of sustained pushing. These are the primary feel knobs.
+`step` and `decay` together set the pace, and they are the primary feel knobs.
+
+The defaults were tuned on stream, not derived. With `decay = 0` the meter keeps everything chat
+gives it, so a terminal is a flat **10 net commands** rather than a rate chat has to sustain —
+within reach of a small chat, and the knob to raise for a large one.
+
+Beware the ceiling that decay imposes: a sustained push of `p` per tick converges on
+`p × step / decay`, so any decay high enough to put that below `10` makes the terminal
+*unreachable* no matter how long chat pushes. `decay = 0` has no ceiling.
 
 **Changes apply at the next encounter, not mid-session.** The engine stages new config and picks it up on `start()`, so retuning can never yank the meter out from under viewers mid-encounter.
 
 ### Rendering config
 
-| Setting | Description |
-|---|---|
-| `startPos` | Screen coordinate for the Flee end of the track (`meter = -10`) |
-| `endPos` | Screen coordinate of the streamer, the Lick end (`meter = +10`) |
-| `scale` | Sprite scale multiplier |
+| Setting | Default | Description |
+|---|---|---|
+| `startPos` | `0.10, 0.70` | Screen coordinate for the Flee end of the track (`meter = -10`), and the direction KawKaw exits |
+| `endPos` | `0.80, 0.70` | Screen coordinate of the streamer, the Lick end (`meter = +10`) |
+| `scale` | `5` | Sprite scale multiplier |
+| `flipX` | `1` | `0` faces left (the sheet's native orientation), `1` faces right |
+| `rotation` | `0` | Degrees clockwise, applied about the sprite centre |
+| `volume` | `100` | Voice-clip volume, percent |
 
 Positions are 0–1 fractions of the overlay. KawKaw's on-screen position interpolates between them using `(meter + 10) / 20`.
+
+### Browser Source size
+
+Nothing declares a resolution — the overlay reads its own size each frame and sizes the canvas
+backing store to match, so it is sharp at any Browser Source dimensions and needs no setting.
+
+Positions being fractions makes them resolution-independent already. Sprite geometry is authored
+against a 720-tall stage and multiplied by `unit = height / 720`, so `scale` means the same thing
+everywhere: the sprite covers a constant share of the source height, and `config.json` moves
+between a 720p and a 4K setup unchanged. `FLEE_SPEED` is scaled the same way so the exit takes the
+same time on screen.
+
+Crucially, **one factor is applied to both axes.** The canvas was previously a fixed 1280×720
+backing store stretched by CSS, which scales width and height independently — a Browser Source
+that is not 16:9 squashed the sprite. A 4:3 or vertical source now positions correctly and keeps
+the sprite square.
+
+**`startPos` is not where KawKaw appears.** A session opens at `meter = 0`, so it emerges at the
+*midpoint* of the track and is pushed outward from there. `startPos` is the flee end — where it
+ends up only if chat shoos it all the way. The key names predate the distinction; the config page
+labels them Flee and Lick.
+
+Unlike game logic, these apply **immediately** rather than at the next encounter: repositioning or
+re-levelling mid-encounter is harmless, so the streamer can tune against a live overlay.
 
 ---
 

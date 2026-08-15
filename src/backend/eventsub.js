@@ -63,7 +63,10 @@ function connectEventSub({ url = DEFAULT_URL, onWelcome, onNotification, onStatu
           armKeepalive(keepaliveSeconds);
           status('connected');
           if (!isReconnect && onWelcome) {
-            try { await onWelcome(session?.id); }
+            // 'connected' only means the socket opened. The subscription is a
+            // separate Helix call that can still fail (dead token, missing
+            // scope), so success gets its own status rather than being implied.
+            try { await onWelcome(session?.id); status('subscribed'); }
             catch (err) { status('subscribe_failed', err.message); }
           }
           break;

@@ -34,13 +34,18 @@ function server(onConnection) {
     const welcomes = [];
     const { wss, url } = await server((ws) => ws.send(welcome('sess-1')));
     const notifications = [];
+    const statuses = [];
     const client = connectEventSub({
       url,
       onWelcome: (id) => { welcomes.push(id); },
       onNotification: (e, t) => notifications.push([e, t]),
+      onStatus: (s) => statuses.push(s),
     });
     await sleep(300);
     assert.deepEqual(welcomes, ['sess-1'], 'subscribed once with the session id');
+    // 'connected' is just the socket; 'subscribed' must come after the Helix call.
+    assert.ok(statuses.indexOf('subscribed') > statuses.indexOf('connected'),
+      `subscribed reported after connected (got ${JSON.stringify(statuses)})`);
     client.close(); wss.close();
   }
 
@@ -115,6 +120,8 @@ function server(onConnection) {
     await sleep(300);
     assert.ok(statuses.some(([s, d]) => s === 'subscribe_failed' && /401/.test(d)),
       'subscribe failure surfaced');
+    assert.ok(!statuses.some(([s]) => s === 'subscribed'),
+      'a failed subscribe must never report success');
     client.close(); wss.close();
   }
 

@@ -13,11 +13,26 @@ const AUDIO_FILES = {
 };
 
 let audioCtx = null;
+let masterGain = null;
+let volume = 1;            // 0–1; every clip plays through masterGain
 const buffers = {};
 
 function ensureContext() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = volume;
+    masterGain.connect(audioCtx.destination);
+  }
   if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+// 0–1. Applies to the next clip — no need to wait for the next encounter, so the
+// streamer can set the level by ear while KawKaw is on screen.
+function setVolume(v) {
+  if (!Number.isFinite(v)) return;
+  volume = Math.min(1, Math.max(0, v));
+  if (masterGain) masterGain.gain.value = volume;
 }
 
 async function preload() {
@@ -41,7 +56,7 @@ function play(name, consecutiveShoos = 0) {
   const source = audioCtx.createBufferSource();
   source.buffer = buffers[name];
   source.playbackRate.value = Math.pow(2, -consecutiveShoos / 12);
-  source.connect(audioCtx.destination);
+  source.connect(masterGain || audioCtx.destination);
   source.start();
 }
 

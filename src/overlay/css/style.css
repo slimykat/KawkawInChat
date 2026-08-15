@@ -65,34 +65,39 @@ html, body {
 }
 
 /* ── Confused bubble ─────────────────────────────────────── */
+/* Every dimension is in `em`, so setting font-size scales the whole bubble.
+   game.js sets it from the sprite height, keeping it proportional at any scale. */
 #confused-bubble {
   position: absolute;
   font-family: 'Press Start 2P', monospace;
-  font-size: 18px;
+  font-size: 18px;              /* fallback; game.js overrides from renderCfg.scale */
   color: #222;
   background: #fff;
-  border: 3px solid #222;
-  padding: 6px 10px;
+  border: 0.17em solid #222;
+  padding: 0.35em 0.55em;
   /* tail via box-shadow pixel art trick */
   box-shadow:
-    3px 0 0 0 #222,
-    -3px 0 0 0 #222,
-    0 3px 0 0 #222,
-    0 -3px 0 0 #222;
+    0.17em 0 0 0 #222,
+    -0.17em 0 0 0 #222,
+    0 0.17em 0 0 #222,
+    0 -0.17em 0 0 #222;
   pointer-events: none;
-  /* JS positions this via left/top */
+  /* JS supplies the anchor point at the top-centre of the sprite; this lifts the
+     bubble to sit centred just above the head. */
+  transform: translate(-50%, -110%);
 }
 
 #confused-bubble::after {
   content: '';
   position: absolute;
-  bottom: -10px;
-  left: 12px;
-  width: 8px;
-  height: 8px;
+  bottom: -0.55em;
+  left: 50%;
+  margin-left: -0.22em;
+  width: 0.45em;
+  height: 0.45em;
   background: #fff;
-  border-left: 3px solid #222;
-  border-bottom: 3px solid #222;
+  border-left: 0.17em solid #222;
+  border-bottom: 0.17em solid #222;
 }
 
 /* ── Connection lost ─────────────────────────────────────── */

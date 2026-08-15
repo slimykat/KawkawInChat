@@ -19,7 +19,10 @@ function connect() {
     let msg;
     try { msg = JSON.parse(e.data); } catch { return; }
     if (msg.type === 'state_update') onStateUpdate(msg.state);
-    else if (msg.type === 'config') setRenderConfig(msg.config);
+    else if (msg.type === 'config') {
+      setRenderConfig(msg.config);
+      setVolume(msg.config.volume / 100);   // stored as a percent
+    }
   });
 
   ws.addEventListener('close', () => {

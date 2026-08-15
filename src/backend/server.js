@@ -66,7 +66,13 @@ function serveStatic(res, urlPath) {
 
   fs.readFile(file, (err, body) => {
     if (err) { res.writeHead(404).end('Not found'); return; }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
+    res.writeHead(200, {
+      'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
+      // OBS Browser Source caches hard, so an edited overlay silently keeps
+      // running the old code. Everything is served off loopback — there is
+      // nothing to save by caching it.
+      'Cache-Control': 'no-store',
+    });
     res.end(body);
   });
   return true;
@@ -220,7 +226,7 @@ function broadcastConfig() {
 connectChat(CHANNEL, ({ userId, action, privileged }) => {
   if (action === 'kawkaw') {
     const allowed = config.trigger === 'command' || config.trigger === 'both';
-    if (allowed && privileged) engine.start();
+    if (allowed && (config.summonBy === 'everyone' || privileged)) engine.start();
   } else {
     engine.command(userId, action);
   }
@@ -256,9 +262,25 @@ async function syncRedeemTrigger() {
 
   eventsub = connectEventSub({
     onWelcome: (sessionId) => auth.subscribeRedemptions(sessionId, broadcaster),
-    onNotification: () => { if (redeemEnabled()) engine.start(); },
+    onNotification: (event) => {
+      // Logged either way: without this there is no way to tell a redemption that
+      // never arrived from one that arrived and was ignored.
+      const who = event?.user_name || 'someone';
+      const reward = event?.reward?.title || 'a reward';
+      if (!redeemEnabled()) {
+        console.log(`KawKaw: ignoring "${reward}" from ${who} — trigger is set to ${config.trigger}`);
+      } else if (!store.rewardMatches(config, reward)) {
+        console.log(`KawKaw: ignoring "${reward}" from ${who} — does not match "${config.rewardTitle}"`);
+      } else if (engine.start()) {
+        console.log(`KawKaw: ${who} redeemed "${reward}" → encounter started`);
+      } else {
+        console.log(`KawKaw: ${who} redeemed "${reward}" — already on screen, ignored`);
+      }
+    },
     onStatus: (status, detail) => {
-      if (status === 'connected') console.log('KawKaw: redeem trigger listening');
+      if (status === 'connected') console.log('KawKaw: EventSub connected, subscribing…');
+      else if (status === 'subscribed') console.log(`KawKaw: redeem trigger armed on #${CHANNEL} — ` +
+        (config.rewardTitle ? `rewards matching "${config.rewardTitle}"` : 'any Channel Points reward'));
       else if (status === 'revoked') console.warn('KawKaw: EventSub subscription revoked —', detail);
       else if (status === 'subscribe_failed') {
         console.error('KawKaw: could not subscribe to redemptions —', detail);

@@ -12,18 +12,30 @@ const FILE = path.join(__dirname, 'config.json');
 const SCHEMA = {
   // Game logic
   trigger:            { enum: ['command', 'redeem', 'both'], default: 'command' },
+  summonBy:           { enum: ['everyone', 'mods'], default: 'everyone' },
+  // Which Channel Points reward counts. Matched case-insensitively as a
+  // substring, so "Summon KawKaw!" still fires; blank means any reward.
+  rewardTitle:        { text: true, maxLength: 80, default: 'KawKaw' },
   step:               { min: 0.01, max: 5,     default: ENGINE.step },
   decay:              { min: 0,    max: 0.9,   default: ENGINE.decay },
   maxSessionDuration: { min: 10,   max: 3600,  default: ENGINE.maxSessionDuration },
   perUserCap:         { min: 1,    max: 100,   default: ENGINE.perUserCap },
   terminalHoldMs:     { min: 500,  max: 30000, default: ENGINE.terminalHoldMs },
 
-  // Rendering — 0–1 fractions of the overlay
-  startPosX: { min: 0, max: 1, default: 0.85 },
+  // Rendering — 0–1 fractions of the overlay.
+  // startPos is the *flee* end of the track (meter -10), not where KawKaw appears:
+  // it emerges at meter 0, the midpoint. The keys predate that distinction.
+  startPosX: { min: 0, max: 1, default: 0.10 },
   startPosY: { min: 0, max: 1, default: 0.70 },
-  endPosX:   { min: 0, max: 1, default: 0.15 },
+  endPosX:   { min: 0, max: 1, default: 0.80 },
   endPosY:   { min: 0, max: 1, default: 0.70 },
-  scale:     { min: 0.5, max: 10, default: 3 },
+  scale:     { min: 0.5, max: 10, default: 5 },
+  // Sprite orientation. flipX is 0/1 rather than a boolean so it rides the same
+  // clamp path as every other field instead of needing its own type.
+  flipX:     { min: 0, max: 1, default: 1 },
+  rotation:  { min: -180, max: 180, default: 0 },
+
+  volume:    { min: 0, max: 100, default: 100 },   // percent
 };
 
 const ENGINE_KEYS = ['step', 'decay', 'maxSessionDuration', 'perUserCap', 'terminalHoldMs'];
@@ -38,6 +50,9 @@ function defaults() {
 // caller falls back to the default rather than letting NaN reach the engine.
 function coerce(spec, value) {
   if (spec.enum) return spec.enum.includes(value) ? value : undefined;
+  // Free text: trimmed and length-capped, since it reaches config.json and the
+  // console. Blank is a real value here (= match any reward), not "unset".
+  if (spec.text) return typeof value === 'string' ? value.trim().slice(0, spec.maxLength) : undefined;
   // Number('') and Number([]) are both 0, which would silently clamp to the
   // minimum. Treat blank and non-scalar input as "not provided" instead.
   if (typeof value !== 'number' && (typeof value !== 'string' || value.trim() === '')) return undefined;
@@ -60,7 +75,8 @@ function validate(input, base = defaults()) {
       if (!(key in input)) continue;
       const v = coerce(spec, input[key]);
       if (v === undefined) { clamped.push(key); continue; }
-      if (!spec.enum && Number(input[key]) !== v) clamped.push(key);
+      const altered = spec.enum ? false : spec.text ? input[key] !== v : Number(input[key]) !== v;
+      if (altered) clamped.push(key);
       out[key] = v;
     }
   }
@@ -90,6 +106,23 @@ const renderConfig = (c) => ({
   startPos: { x: c.startPosX, y: c.startPosY },
   endPos:   { x: c.endPosX,   y: c.endPosY },
   scale:    c.scale,
+  flipX:    c.flipX === 1,
+  rotation: c.rotation,
+  volume:   c.volume,
+  // Also an engine key: the overlay needs it to time the exit animation so the
+  // dig finishes exactly as the engine drops back to idle.
+  terminalHoldMs: c.terminalHoldMs,
 });
 
-module.exports = { SCHEMA, defaults, validate, load, save, engineConfig, renderConfig, FILE };
+// Does this Channel Points reward count? Matched on the title rather than the
+// reward id: the EventSub condition only accepts an id, which would mean a
+// reward picker in the config page and a stale id every time the streamer
+// recreates the reward. Substring so "Summon KawKaw!" matches, blank = any.
+function rewardMatches(config, title) {
+  const want = (config.rewardTitle || '').toLowerCase();
+  return !want || String(title ?? '').toLowerCase().includes(want);
+}
+
+module.exports = {
+  SCHEMA, defaults, validate, load, save, engineConfig, renderConfig, rewardMatches, FILE,
+};
