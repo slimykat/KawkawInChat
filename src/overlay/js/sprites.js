@@ -18,18 +18,20 @@ const FRAME = 50;
 // Body animation definitions. `row` indexes the sheet; `w`/`h` are design size,
 // deliberately not the source cell size — game.js multiplies them by `scale` to
 // place and size the sprite.
-const anim = (row, frames, fps, loop) => ({ row, frames, fps, loop, w: FRAME, h: FRAME });
+// Named defAnim, not anim: these files are plain scripts sharing one global
+// scope, and game.js already owns `anim` for the current render state.
+const defAnim = (row, frames, fps, loop) => ({ row, frames, fps, loop, w: FRAME, h: FRAME });
 
 // Frame counts match what is drawn on the sheet. They used to be one short on
 // idle, emerge, tongue and dig, so every one of those cut its last frame: emerge
 // popped to idle a frame early, and dig ended with KawKaw still ~24% on screen.
 const ANIMS = {
-  idle:        anim(1, 3, 6, true),
-  happy:       anim(2, 1, 6, true),
-  dig:         anim(6, 4, 8, false),
-  emerge:      anim(3, 4, 8, false),
-  tongueStart: anim(4, 1, 6, false),
-  tongue:      anim(5, 3, 6, true),
+  idle:        defAnim(1, 3, 6, true),
+  happy:       defAnim(2, 1, 6, true),
+  dig:         defAnim(6, 4, 8, false),
+  emerge:      defAnim(3, 4, 8, false),
+  tongueStart: defAnim(4, 1, 6, false),
+  tongue:      defAnim(5, 3, 6, true),
 };
 
 // Eye overlay sprites — row 0, cols 1–4. Col 1 is dry; cols 2–4 add the
