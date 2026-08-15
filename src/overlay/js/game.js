@@ -202,7 +202,7 @@ function renderLoop(ts) {
       drawSprite(ctx, anim.name, anim.frame, dx, dy, s);
       // Sad crying overlay sits on the idle/happy body; size = shooStreak.
       if ((anim.name === 'idle' || anim.name === 'happy') && shooStreak > 0) {
-        drawEye(ctx, shooStreak, dx, dy, s);
+        drawEye(ctx, shooStreak, dx, dy, s, anim.name, anim.frame);
       }
       ctx.restore();
     }

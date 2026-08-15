@@ -34,25 +34,41 @@ const ANIMS = {
   tongue:      defAnim(5, 3, 6, true),
 };
 
-// Eye overlay sprites — row 0, cols 1–4. Col 1 is dry; cols 2–4 add the
-// teardrop and differ only in where the white shine sits, giving the eye a glint
-// as the streak runs. They are all the same size — the swelling is not in the art.
+// Eye overlay sprites — row 0, cols 1–4. Col 1 is dry, cols 2–4 add the teardrop.
 const EYE_FRAMES = [1, 2, 3, 4].map((col) => ({ col, row: 0 }));
 
-// Eye overlay is designed to sit flush with the body sprite's top-left corner.
-const EYE_OFFSET = { x: 0, y: 0 };
+// ── Eye registration ──────────────────────────────────────────────────────────
+// The art is hand-drawn, so the eye does not sit in the same place twice. It
+// wanders ~2 design px horizontally across the idle cycle, and the overlay cells
+// wander with it — each was drawn over a different idle frame.
+//
+// That coupling cannot be relied on, because the two are driven by different
+// clocks: the overlay frame comes from shooStreak, the body frame from the idle
+// loop. Eye frame 2 lands on idle frame 0 routinely, which is a 3.6 design px
+// miss — enough to leave the body's own eye showing beside the overlay.
+//
+// So neither table is an offset from the other. Both are absolute eyeball centres
+// in design px, measured off the sheet (the largest dark blob in each body cell;
+// the white fill in each overlay cell), and drawEye aligns one onto the other.
+// Re-measure both if the eyes are redrawn.
+const BODY_EYE = {
+  idle:  [{ x: 23.33, y: 34.64 }, { x: 21.82, y: 33.96 }, { x: 21.09, y: 34.32 }],
+  happy: [{ x: 23.18, y: 30.73 }],
+};
+
+const EYE_CENTRE = [
+  { x: 23.23, y: 35.42 }, { x: 21.98, y: 35.42 },
+  { x: 20.73, y: 35.21 }, { x: 19.69, y: 35.31 },
+];
 
 // The eye swells with each consecutive shoo. The sheet has no larger eye to swap
-// in, so it is scaled — the one place alignment with the body's pixel grid is
-// deliberately broken, since a fractional scale cannot land on it.
+// in, so it is scaled about the eyeball's centre — not the cell's, or the eye
+// would slide toward the bottom-right as it grew.
 //
-// Growth is centred on the eyeball, not the cell, or the eye would slide toward
-// the bottom-right as it grew. Measured off the sheet: the dry eye's ink spans
-// x172–275, y291–390 inside its 480px cell → centre (223.5, 340.5), which is
-// (23.3, 35.5) in design px.
-const EYE_ANCHOR = { x: 23.3, y: 35.5 };
-const EYE_GROWTH = 0.3;        // extra scale per consecutive shoo tick
-const EYE_GROWTH_MAX = 2.2;    // ceiling, so a long streak can't swallow the body
+// Aligned, the overlay already covers the body's eye at 1.010, so the streak
+// starts at 1:1 and the swelling is pure effect rather than cover-up.
+const EYE_GROWTH = 0.15;       // extra scale per consecutive shoo tick
+const EYE_GROWTH_MAX = 1.8;    // ceiling, so a long streak can't swallow the body
 
 const sheet = new Image();
 sheet.src = '/assets/kawkaw/KawKawSprite_HandDrawn.png';
@@ -71,15 +87,21 @@ function drawSprite(ctx, animName, frame, dx, dy, scale) {
 
 // `shooStreak` is the raw consecutive-shoo count, not clamped: the frame stops
 // changing after the last one but the eye keeps swelling up to EYE_GROWTH_MAX.
-function drawEye(ctx, shooStreak, dx, dy, scale) {
+// `bodyAnim`/`bodyFrame` are what is drawn underneath — the overlay is placed
+// against that frame's eye, not against the cell.
+function drawEye(ctx, shooStreak, dx, dy, scale, bodyAnim, bodyFrame) {
   if (shooStreak < 1 || !sheet.complete) return;
 
-  const e = EYE_FRAMES[Math.min(shooStreak, EYE_FRAMES.length) - 1];
+  const i = Math.min(shooStreak, EYE_FRAMES.length) - 1;
+  const e = EYE_FRAMES[i];
+  const oc = EYE_CENTRE[i];
+  const body = BODY_EYE[bodyAnim] || BODY_EYE.idle;
+  const bc = body[bodyFrame % body.length];
+
   const grow = Math.min(EYE_GROWTH_MAX, 1 + (shooStreak - 1) * EYE_GROWTH);
-  // Offset back by the growth around the anchor, so the eyeball stays put and the
-  // overlay swells outward from it.
-  const ox = dx + (EYE_OFFSET.x + EYE_ANCHOR.x * (1 - grow)) * scale;
-  const oy = dy + (EYE_OFFSET.y + EYE_ANCHOR.y * (1 - grow)) * scale;
+  // Put the overlay's eyeball on the body's, then swell about that shared point.
+  const ox = dx + (bc.x - oc.x * grow) * scale;
+  const oy = dy + (bc.y - oc.y * grow) * scale;
 
   ctx.drawImage(
     sheet,
