@@ -8,7 +8,9 @@ const line = (tags, text) => `${tags} ${FROM} PRIVMSG #chan :${text}`;
 
 // Commands are recognised, case-insensitively, and carry the tag user-id.
 assert.deepEqual(parseCommand(line(TAGS, '!call')),
-  { userId: '42', action: 'call', privileged: false });
+  { userId: '42', name: 'bob', action: 'call', privileged: false });
+assert.equal(parseCommand(`@display-name=Bob;user-id=42 ${FROM} PRIVMSG #chan :!call`).name, 'Bob',
+  'display name preferred for the console');
 assert.equal(parseCommand(line(TAGS, '!SHOO')).action, 'shoo', 'case-insensitive');
 assert.equal(parseCommand(line(TAGS, '!kawkaw')).action, 'kawkaw');
 

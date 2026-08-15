@@ -223,12 +223,19 @@ function broadcastConfig() {
 
 // ── Chat → engine ─────────────────────────────────────────────────────────────
 
-connectChat(CHANNEL, ({ userId, action, privileged }) => {
-  if (action === 'kawkaw') {
-    const allowed = config.trigger === 'command' || config.trigger === 'both';
-    if (allowed && (config.summonBy === 'everyone' || privileged)) engine.start();
+connectChat(CHANNEL, ({ userId, name, action, privileged }) => {
+  if (action !== 'kawkaw') { engine.command(userId, action); return; }
+
+  // Logged the same way redemptions are: without this there is no way to tell a
+  // !kawkaw that never reached the backend from one that arrived and was gated.
+  if (config.trigger === 'redeem') {
+    console.log(`KawKaw: ignoring !kawkaw from ${name} — trigger is set to ${config.trigger}`);
+  } else if (config.summonBy !== 'everyone' && !privileged) {
+    console.log(`KawKaw: ignoring !kawkaw from ${name} — summoning is limited to ${config.summonBy}`);
+  } else if (engine.start()) {
+    console.log(`KawKaw: ${name} ran !kawkaw → encounter started`);
   } else {
-    engine.command(userId, action);
+    console.log(`KawKaw: ${name} ran !kawkaw — already on screen, ignored`);
   }
 });
 

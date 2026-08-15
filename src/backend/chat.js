@@ -49,7 +49,8 @@ function connectChat(channel, onCommand) {
   return { close() { closed = true; try { ws.close(); } catch {} } };
 }
 
-// One IRC line → { userId, action, privileged }, or null if it isn't ours.
+// One IRC line → { userId, name, action, privileged }, or null if it isn't ours.
+// `name` is for the console only — never for identity, which is always userId.
 //
 //   @badges=broadcaster/1;mod=0;user-id=123 :nick!… PRIVMSG #chan :!call
 //   └──────────── tags ───────────────────┘ └prefix┘ └cmd┘ └chan┘ └text┘
@@ -80,8 +81,10 @@ function parseCommand(line) {
   if (!action) return null;
 
   const badges = tags['badges'] || '';
+  const nick = prefix.split('!')[0];
   return {
-    userId: tags['user-id'] || prefix.split('!')[0] || 'anon',
+    userId: tags['user-id'] || nick || 'anon',
+    name: tags['display-name'] || nick || 'someone',
     action,
     privileged: tags['mod'] === '1' || /\bbroadcaster\b/.test(badges) || /\bmoderator\b/.test(badges),
   };
