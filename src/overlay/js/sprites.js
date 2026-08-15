@@ -20,13 +20,16 @@ const FRAME = 50;
 // place and size the sprite.
 const anim = (row, frames, fps, loop) => ({ row, frames, fps, loop, w: FRAME, h: FRAME });
 
+// Frame counts match what is drawn on the sheet. They used to be one short on
+// idle, emerge, tongue and dig, so every one of those cut its last frame: emerge
+// popped to idle a frame early, and dig ended with KawKaw still ~24% on screen.
 const ANIMS = {
-  idle:        anim(1, 2, 6, true),
+  idle:        anim(1, 3, 6, true),
   happy:       anim(2, 1, 6, true),
-  dig:         anim(6, 3, 8, false),
-  emerge:      anim(3, 3, 8, false),
+  dig:         anim(6, 4, 8, false),
+  emerge:      anim(3, 4, 8, false),
   tongueStart: anim(4, 1, 6, false),
-  tongue:      anim(5, 2, 6, true),
+  tongue:      anim(5, 3, 6, true),
 };
 
 // Eye overlay sprites — row 0, cols 1–4. Col 1 is dry; cols 2–4 add the
