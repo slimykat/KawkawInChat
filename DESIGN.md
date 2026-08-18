@@ -388,7 +388,8 @@ For development:
 
 ```bash
 cd src/backend
-npm install
+npm install                   # plain, not --omit=dev: KawKaw.command skips the
+                              # dev dependencies, so nodemon is not there yet
 cp .env.example .env          # or leave it out and use the setup page
 npm run dev
 

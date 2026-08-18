@@ -316,6 +316,11 @@ function handleAuthCallback(req, res) {
 const clients = new Set();
 const wss = new WebSocketServer({ server });
 
+// ws forwards the http server's errors onto itself, and an 'error' with no
+// listener is thrown rather than delivered. Without this, a websocket failure
+// escapes as an uncaught exception instead of being logged like everything else.
+wss.on('error', (err) => console.error('KawKaw: websocket server error —', err.message));
+
 wss.on('connection', (ws, req) => {
   if (!hostAllowed(req)) { ws.close(1008, 'Forbidden'); return; }
   clients.add(ws);
@@ -442,7 +447,29 @@ setInterval(() => {
 // An unhandled throw here would take the overlay down mid-stream; log and carry on.
 process.on('uncaughtException', (err) => console.error('KawKaw: uncaught —', err));
 
+// Failing to start is the one error that must not be swallowed: the catch-all
+// above would log EADDRINUSE and then leave a server that never bound sitting
+// there looking like it is running.
+//
+// Prepended because ws registered its own error listener first, and that one
+// re-emits on the WebSocketServer — an appended handler is never reached.
+// Detached once listening, so a later error still cannot take the overlay down.
+function onStartupError(err) {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`KawKaw: port ${PORT} is already in use — KawKaw is probably already running.`);
+    console.error('  Close the other KawKaw window, or set a different PORT in src/backend/.env.');
+  } else {
+    console.error('KawKaw: could not start —', err.message);
+  }
+  // 2, not 1: tells KawKaw.command the problem has already been explained in
+  // plain language, so it holds the window without adding "stopped unexpectedly".
+  process.exit(2);
+}
+server.prependOnceListener('error', onStartupError);
+
 server.listen(PORT, HOST, () => {
+  server.off('error', onStartupError);
+
   const home = `http://${HOST}:${PORT}/`;
   console.log(CHANNEL
     ? `KawKaw is running on ${home}  (channel: #${CHANNEL})`

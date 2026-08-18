@@ -1,23 +1,35 @@
 # KawkawInChat
 
-A Twitch chat engagement overlay: chat plays tug-of-war over a small creature that
-emerges on your stream. **!call** pulls it toward you, **!shoo** pushes it away,
-and every second the net result moves it one way or the other. It ends by licking
-you, fleeing, or giving up confused.
+A recreation of the Kawkaw encounter from Deltarune Chapter 5. Let Twitch chat
+engage with the stream by letting Kawkaw lick you on your face; Or play with 
+its feeling and make it cry.
 
-Inspired by the Kawkaw encounter in Deltarune Chapter 5. Runs as an OBS Browser
-Source fed by a small backend on your own machine — nothing is hosted, nothing is
-publicly reachable.
+![KawKaw demo](assets/demo.gif)
+- **!kawkaw** starts the encounter,
+- **!call** pulls it toward you, 
+- **!shoo** pushes it away,
 
-![KawKaw idling, won over, and about to cry](assets/demo.gif)
+It runs as an OBS Browser Source fed by a small backend on your own machine — 
+nothing is hosted, nothing is publicly reachable.
+
+
 
 ## Quick start
 
-macOS. You need [Node.js](https://nodejs.org) installed.
+### MacOS
+You need [Node.js](https://nodejs.org) installed — the LTS version is fine.
 
-1. Download or clone this repository.
+1. Get the code, either way:
+   - `git clone https://github.com/slimykat/KawkawInChat.git`, or
+   - download the ZIP from the [latest release](https://github.com/slimykat/KawkawInChat/releases/latest)
+     and unzip it.
 2. **Double-click `KawKaw.command`.** It installs what it needs on the first run,
    starts the backend, and opens the setup page in your browser.
+
+   If you downloaded the ZIP, macOS will refuse the first launch — anything from a
+   browser is quarantined. Right-click `KawKaw.command` and choose **Open**, and if
+   macOS still says no, allow it once in System Settings → Privacy & Security →
+   **Open Anyway**. Cloning avoids this entirely.
 3. Type your Twitch channel name and press **Save and start**.
 4. Copy the OBS URL shown on that page into a new **Browser Source** in OBS, and
    set its size to your canvas size.
@@ -27,9 +39,12 @@ Keep the Terminal window open while you stream — closing it stops KawkawInChat
 Anyone in chat can now type `!kawkaw` to summon it. Position, sprite size, how
 hard chat has to push, and session length are all on the **Settings** page.
 
-### Channel Points instead of a chat command
+### Windows
+TBA
 
-Optional, and it needs a bit more setup — a Twitch application of your own:
+### Channel Points trigger instead of a chat command (Optional)
+
+It needs a bit more setup — a Twitch application of your own:
 
 1. Register an app at [dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps).
 2. Set its **OAuth Redirect URL** to exactly `http://localhost:3000/auth/callback`.
@@ -42,7 +57,7 @@ Optional, and it needs a bit more setup — a Twitch application of your own:
 The credentials stay on your machine, in `src/backend/.env`. The one-time
 authorization redirect is the only inbound request in the whole design.
 
-## Audio
+## Audio (Optional)
 
 **The voice clips are not included in this repository.** They are Deltarune's, and
 they are not mine to distribute.
