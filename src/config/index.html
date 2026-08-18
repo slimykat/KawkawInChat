@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KawKaw</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/ui/config.css">
+</head>
+<body>
+  <div id="config-page">
+    <h1>KawKaw</h1>
+    <p class="subtitle" id="mode-note">Checking…</p>
+
+    <!-- First run: no channel set yet. Hidden once setup is done. -->
+    <section id="setup" class="hidden">
+      <h2>Set up</h2>
+      <p class="hint">Two things and you are running. Nothing here leaves your computer.</p>
+      <label>
+        <span>Your Twitch channel</span>
+        <input type="text" id="setup-channel" placeholder="your_twitch_name" autocomplete="off">
+      </label>
+      <p class="hint">The channel whose chat KawKaw listens to. Pasting your channel URL is fine.</p>
+
+      <details>
+        <summary>Channel Points redemption <em>(optional)</em></summary>
+        <p class="hint">Only needed if you want a Channel Points reward to summon KawKaw. The
+        <strong>!kawkaw</strong> chat command needs none of this and works straight away.</p>
+        <ol class="hint">
+          <li>Register an application at
+            <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noreferrer">dev.twitch.tv/console/apps</a>.</li>
+          <li>Set its <strong>OAuth Redirect URL</strong> to exactly:
+            <code id="redirect-url">http://localhost:3000/auth/callback</code></li>
+          <li>Paste the client id and secret below.</li>
+        </ol>
+        <label>
+          <span>Client ID</span>
+          <input type="text" id="setup-client-id" autocomplete="off">
+        </label>
+        <label>
+          <span>Client Secret</span>
+          <input type="password" id="setup-client-secret" autocomplete="off">
+        </label>
+      </details>
+
+      <div id="actions">
+        <button id="setup-btn">Save and start</button>
+        <span id="setup-status"></span>
+      </div>
+    </section>
+
+    <!-- Everything below is hidden until setup is done. -->
+    <div id="running" class="hidden">
+      <section>
+        <h2>Status</h2>
+        <ul class="hint" id="status-list"></ul>
+        <p class="hint" id="redeem-action"></p>
+      </section>
+
+      <section>
+        <h2>Add to OBS</h2>
+        <p class="hint">Add a <strong>Browser Source</strong> in OBS and paste this as the URL. Set its
+        size to your canvas size (1920×1080 is typical) and leave everything else alone.</p>
+        <p><code id="obs-url">http://127.0.0.1:3000/overlay/</code>
+          <button id="copy-btn" class="small-btn">Copy</button></p>
+        <p class="hint">Keep the Terminal window open while you stream — closing it stops KawKaw.</p>
+      </section>
+
+      <section>
+        <h2>How it works</h2>
+        <p class="hint">KawKaw emerges <strong>halfway</strong> along a track you place in Settings, and
+        chat decides which way it goes. Every second, the votes that arrived in that second are added up:
+        <strong>!call</strong> pulls KawKaw one step toward you, <strong>!shoo</strong> pushes it one step
+        toward the flee end. Only the <em>net</em> result counts, so 6 calls and 4 shoos in the same second
+        move it 2 steps toward you.</p>
+        <p class="hint">The track runs from <strong>−10</strong> (flee) through <strong>0</strong> (where it
+        appears) to <strong>+10</strong> (lick). Three ways it can end:</p>
+        <ul class="hint">
+          <li><strong>Lick</strong> — chat gets it to +10. KawKaw licks you, then digs away.</li>
+          <li><strong>Flee</strong> — chat gets it to −10. KawKaw slides off the screen the way it came.</li>
+          <li><strong>Confused</strong> — the session timeout runs out with the meter stuck in between.
+            A <strong>?</strong> appears and KawKaw digs away.</li>
+        </ul>
+        <p class="hint">One viewer cannot decide it alone: each person's messages are capped per second, so
+        spam is welcome but soloing the meter is not. Saved changes take effect at the <strong>next</strong>
+        KawKaw, never mid-encounter — except position, orientation, and volume, which apply immediately so
+        you can adjust them while looking at the overlay.</p>
+      </section>
+
+      <section>
+        <h2>Settings</h2>
+        <p class="hint">Where KawKaw stands, how hard chat has to push, how long a session runs, and the
+        volume.</p>
+        <p><a href="/settings" id="settings-link">Open settings</a></p>
+      </section>
+    </div>
+  </div>
+
+  <script src="/ui/home.js?v=1"></script>
+</body>
+</html>

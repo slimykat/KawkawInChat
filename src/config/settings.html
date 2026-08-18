@@ -3,36 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>KawKaw — Streamer Config</title>
+  <title>KawKaw — Settings</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="config.css">
+  <link rel="stylesheet" href="/ui/config.css">
 </head>
 <body>
   <div id="config-page">
-    <h1>KawKaw</h1>
+    <p class="nav"><a href="/">Back to KawKaw</a></p>
+    <h1>Settings</h1>
     <p class="subtitle" id="mode-note"></p>
-
-    <section>
-      <h2>How it works</h2>
-      <p class="hint">KawKaw emerges <strong>halfway</strong> along a track you place below, and chat decides
-      which way it goes. Every second, the votes that arrived in that second are added up:
-      <strong>!call</strong> pulls KawKaw one step toward you, <strong>!shoo</strong> pushes it one step
-      toward the flee end. Only the <em>net</em> result counts, so 6 calls and 4 shoos in the same second
-      move it 2 steps toward you.</p>
-      <p class="hint">The track runs from <strong>−10</strong> (flee) through <strong>0</strong> (where it
-      appears) to <strong>+10</strong> (lick). Three ways it can end:</p>
-      <ul class="hint">
-        <li><strong>Lick</strong> — chat gets it to +10. KawKaw licks you, then digs away.</li>
-        <li><strong>Flee</strong> — chat gets it to −10. KawKaw slides off the screen the way it came.</li>
-        <li><strong>Confused</strong> — the session timeout runs out with the meter stuck in between.
-          A <strong>?</strong> appears and KawKaw digs away.</li>
-      </ul>
-      <p class="hint">One viewer cannot decide it alone: each person's messages are capped per second, so
-      spam is welcome but soloing the meter is not. Saved changes take effect at the <strong>next</strong>
-      KawKaw, never mid-encounter — except position, orientation, and volume, which apply immediately so
-      you can adjust them while looking at the overlay.</p>
-    </section>
 
     <section>
       <h2>Session start</h2>
@@ -162,6 +142,6 @@
     </div>
   </div>
 
-  <script src="config.js?v=2"></script>
+  <script src="/ui/config.js?v=3"></script>
 </body>
 </html>

@@ -116,7 +116,7 @@ const renderConfig = (c) => ({
 
 // Does this Channel Points reward count? Matched on the title rather than the
 // reward id: the EventSub condition only accepts an id, which would mean a
-// reward picker in the config page and a stale id every time the streamer
+// reward picker in the settings page and a stale id every time the streamer
 // recreates the reward. Substring so "Summon KawKaw!" matches, blank = any.
 function rewardMatches(config, title) {
   const want = (config.rewardTitle || '').toLowerCase();

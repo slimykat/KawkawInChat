@@ -50,8 +50,10 @@ NyonClicker/
     │   │   ├── sprites.js               Sprite sheet coordinate map + draw helpers
     │   │   └── audio.js                 Web Audio API, pitch-shifted playback
     │   └── css/style.css
-    ├── config/                          Streamer settings page
-    │   ├── config.html
+    ├── config/                          Streamer-facing pages
+    │   ├── index.html                   Front page: setup, status, guide  (served at /)
+    │   ├── home.js
+    │   ├── settings.html                Tuning knobs                      (served at /settings)
     │   ├── config.css
     │   └── config.js
     └── backend/
@@ -59,12 +61,13 @@ NyonClicker/
         ├── engine.js                    Game logic: commands → meter → state
         ├── chat.js                      Anonymous Twitch IRC reader
         ├── config.js                    Schema, validation, config.json persistence
+        ├── setup.js                     Reads/writes .env for the setup page
         ├── eventsub.js                  EventSub WebSocket client (redeem trigger)
         ├── twitch.js                    OAuth + Helix; token storage and refresh
         ├── *.test.js                    One self-check per module, plain assert
         ├── package.json
         ├── .env.example
-        ├── config.json                  written by the config page   (gitignored)
+        ├── config.json                  written by the settings page (gitignored)
         └── tokens.json                  OAuth tokens, 0600           (gitignored)
 ```
 
@@ -98,7 +101,7 @@ Chat reading itself needs no backend — Twitch IRC accepts anonymous read-only 
 |---|---|---|
 | Outbound | `wss://irc-ws.chat.twitch.tv` | Read chat, anonymously |
 | Outbound | `wss://eventsub.wss.twitch.tv` | Receive Channel Points redemptions |
-| **Loopback** | `http://127.0.0.1:PORT` | Serve overlay + config page, stream state |
+| **Loopback** | `http://127.0.0.1:PORT` | Serve overlay + streamer pages, stream state |
 
 There is no webhook, no tunnel, no port forwarding, and no public URL. This is a deliberate constraint: asking streamers — some with large channels — to expose an endpoint and secure it correctly is a burden the design should not create.
 
@@ -302,7 +305,7 @@ Configuration lives in two places, split by how often it changes.
 | | Where | Changed |
 |---|---|---|
 | **Secrets and identity** | `.env` | Once, at install |
-| **Everything tunable** | config page → backend | Any time |
+| **Everything tunable** | settings page → backend | Any time |
 
 `.env` holds only what the installer writes once: `CHANNEL`, `PORT`, and the Twitch application credentials for the redeem trigger. No game tuning lives there.
 
@@ -364,7 +367,7 @@ the sprite square.
 
 **`startPos` is not where KawKaw appears.** A session opens at `meter = 0`, so it emerges at the
 *midpoint* of the track and is pushed outward from there. `startPos` is the flee end — where it
-ends up only if chat shoos it all the way. The key names predate the distinction; the config page
+ends up only if chat shoos it all the way. The key names predate the distinction; the settings page
 labels them Flee and Lick.
 
 Unlike game logic, these apply **immediately** rather than at the next encounter: repositioning or
@@ -372,28 +375,40 @@ re-levelling mid-encounter is harmless, so the streamer can tune against a live 
 
 ---
 
-## Dev Setup
+## Setup
+
+For a streamer: double-click **`KawKaw.command`**. It installs dependencies on the
+first run, starts the backend, and opens the front page. If there is no `.env` yet
+the page is a short setup form, which writes one and applies it without a restart —
+no terminal and no text editor. The OBS Browser Source URL is on that page with a
+copy button.
+
+For development:
 
 ```bash
 cd src/backend
 npm install
-cp .env.example .env          # set CHANNEL to your Twitch login
+cp .env.example .env          # or leave it out and use the setup page
 npm run dev
 
 # In OBS: add a Browser Source →
 #   http://127.0.0.1:3000/overlay/
-# Settings page (any browser) →
-#   http://127.0.0.1:3000/config/config.html
+# Front page / settings (any browser) →
+#   http://127.0.0.1:3000/  and  /settings
 ```
+
+A missing or channel-less `.env` is not an error: the backend starts anyway and
+serves the setup page, because a streamer who cannot be walked through setup in a
+browser cannot be walked through it at all.
 
 No tunnel, no tokens, and no Twitch registration for the chat-command trigger.
 
 ### Enabling the redeem trigger
 
 1. Register an application at [dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps). Set its OAuth Redirect URL to exactly `http://localhost:3000/auth/callback`.
-2. Put its client id and secret in `.env` (`TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`) — these are the only secrets the project holds.
-3. Set the trigger to `redeem` or `both` on the config page.
-4. The backend prints an authorization link. Open it once and approve; the resulting token is stored in `tokens.json` (mode `0600`) and refreshed automatically from then on.
+2. Put its client id and secret in `.env` (`TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`) — these are the only secrets the project holds. The setup form accepts them too, and writes them there for you.
+3. Set the trigger to `redeem` or `both` on the settings page.
+4. The front page shows **Authorize with Twitch**. Click it once and approve; the resulting token is stored in `tokens.json` (mode `0600`) and refreshed automatically from then on. The same link is still printed to the console as a fallback.
 
 The redirect in step 4 is the **only** inbound request in the entire design, and it is live only for the seconds between clicking the link and Twitch redirecting back. It is pinned to a single-use random `state`, so a stray or forged redirect cannot trade in a code the backend never requested.
 

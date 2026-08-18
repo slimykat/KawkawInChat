@@ -97,7 +97,8 @@ small {
   gap: 16px;
 }
 
-#save-btn {
+#save-btn,
+#setup-btn {
   font-family: 'Press Start 2P', monospace;
   font-size: 10px;
   background: #7c3aed;
@@ -109,8 +110,8 @@ small {
   letter-spacing: 1px;
 }
 
-#save-btn:hover { background: #6d28d9; }
-#save-btn:active { background: #5b21b6; }
+#save-btn:hover, #setup-btn:hover { background: #6d28d9; }
+#save-btn:active, #setup-btn:active { background: #5b21b6; }
 
 #save-status {
   font-size: 8px;
@@ -118,3 +119,50 @@ small {
 
 #save-status.ok    { color: #4ade80; }
 #save-status.error { color: #f87171; }
+
+/* ── Front page ───────────────────────────────────────────────────────────── */
+
+.hidden { display: none; }
+
+.nav { margin: 0 0 1rem; font-size: 0.75rem; }
+.nav a, #settings-link { color: #a78bfa; }
+
+code {
+  background: #1e1b2e;
+  border: 1px solid #3f3a5a;
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
+/* Status lines carry their own emoji marker, so the bullets are noise. */
+#status-list { list-style: none; padding-left: 0; }
+#status-list li { margin: 0.4rem 0; }
+
+.small-btn {
+  background: #3f3a5a;
+  color: #e9e6f5;
+  border: 0;
+  border-radius: 4px;
+  padding: 0.3rem 0.7rem;
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.small-btn:hover { background: #514a72; }
+
+.button-link {
+  display: inline-block;
+  background: #7c3aed;
+  color: #fff;
+  text-decoration: none;
+  border-radius: 4px;
+  padding: 0.5rem 0.9rem;
+}
+.button-link:hover { background: #6d28d9; }
+
+details { margin: 0.75rem 0; }
+summary { cursor: pointer; font-size: 0.75rem; }
+
+#setup-status.error { color: #f87171; }
