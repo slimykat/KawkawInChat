@@ -2,7 +2,9 @@
 # Double-click to start KawKaw.
 #
 # Installs dependencies the first time, starts the backend, and opens the page in
-# your browser. Closing the Terminal window stops KawKaw.
+# your browser. Closing this window stops KawKaw — but a window that is force-quit
+# can leave the backend running behind it, so a second double-click looks for one
+# that is already up and opens that instead of failing next to it.
 
 cd "$(dirname "$0")/src/backend" || exit 1
 
@@ -43,10 +45,12 @@ KAWKAW_OPEN=1 node server.js
 status=$?
 
 # 2 means the backend already said what was wrong, in words a streamer can act on.
+# 3 means a KawKaw was already running and the browser has been sent to it — nothing
+# is wrong, so nothing more is said here.
 # 130 is Ctrl-C and 143 is a kill — the streamer stopping it on purpose.
 if [ $status -eq 2 ]; then
   hold
-elif [ $status -ne 0 ] && [ $status -ne 130 ] && [ $status -ne 143 ]; then
+elif [ $status -ne 0 ] && [ $status -ne 3 ] && [ $status -ne 130 ] && [ $status -ne 143 ]; then
   echo
   echo "KawKaw stopped unexpectedly."
   hold
