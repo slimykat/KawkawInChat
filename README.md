@@ -9,7 +9,7 @@ Inspired by the Kawkaw encounter in Deltarune Chapter 5. Runs as an OBS Browser
 Source fed by a small backend on your own machine — nothing is hosted, nothing is
 publicly reachable.
 
-<!-- TODO: gif of an encounter -->
+![KawKaw idling, won over, and about to cry](assets/demo.gif)
 
 ## Quick start
 

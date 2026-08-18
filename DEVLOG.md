@@ -195,6 +195,17 @@ writing your own paragraph is usually cheaper than inheriting the obligation.
 of the idea/expression line and are not copyrightable. Recreating the encounter
 was fine throughout; only the *assets* ever needed solving.
 
+**The README GIF is rendered, not recorded.** `assets/demo.gif` is composed
+offline from the sheet by a throwaway PIL script rather than screen-captured, so
+it gets exact frame timing and a transparent background. The script is not in the
+repo on purpose: it has to duplicate `CELL`, `FRAME`, `BODY_EYE` and `EYE_CENTRE`
+from `sprites.js`, and a tracked copy would go quietly stale the first time the
+art is redrawn. Rewriting it against the current tables is the cheaper half.
+
+The white outline around the sprite is in the art itself — those edge pixels are
+opaque and near-white, not soft alpha — so it survives GIF's 1-bit alpha, and
+raising the cutout threshold only punches holes in the eye.
+
 **The resolution.** The sprite is original art and ships with the repo. The voice
 clips stay out permanently, with extraction instructions for anyone who owns the
 game. Nothing copyrighted is redistributed, and a clone works — silently — out of

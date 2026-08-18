@@ -6,7 +6,7 @@ and differently from each other, so this file spells out which is which.
 
 ## Sprite art — mine, ask first
 
-`kawkaw/KawKawSprite_HandDrawn.png`
+`kawkaw/KawKawSprite_HandDrawn.png`, `demo.gif`
 
 Hand-drawn original artwork, © 2026 slimykat. **All rights reserved.**
 
