@@ -8,10 +8,12 @@ tokens.json
 config.json
 config.json.tmp
 
-# Game assets — not redistributable. The sprite sheet and voice clips are
-# Deltarune assets and stay off the public repo until they are replaced with
-# original art and sounds. Drop your own into assets/kawkaw/ to run this.
-assets/
+# Game audio — the voice clips are still Deltarune assets and are not
+# redistributable, so they stay out of the repo until original sounds replace
+# them. Drop your own into assets/kawkaw/ to hear anything; the overlay runs
+# silently without them. The sprite sheet is original artwork and IS tracked.
+*.ogg
+*.wav
 
 # Dependencies
 node_modules/
