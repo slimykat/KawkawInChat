@@ -73,18 +73,26 @@ practice sound effects are far less likely to than music. But nobody can promise
 you they won't, so decide for yourself. Running silent avoids the question
 entirely, and the encounter works the same.
 
-## Credits and copyright
+## Credits and licensing
 
-- **Code and design** — [slimykat](https://github.com/slimykat)
-- **Sprite art and animation** — hand-drawn by [slimykat](https://github.com/slimykat), original work
-- **Voice clips** — © Toby Fox / Royal Sciences LLC. **Not included in this
-  repository** and not licensed here. Extracted by you, from your own copy, for
-  your own use.
-- **The character and encounter** — Kawkaw is from Deltarune, by Toby Fox. This is
-  an unofficial, non-commercial fan project with no affiliation or endorsement.
+Three different things live in this repository under three different terms.
 
-This project is free and must stay that way. Do not put it behind a paywall, tie
-it to Bits, sell it, or attach it to anything you charge for.
+| | | |
+|---|---|---|
+| **Code** | [slimykat](https://github.com/slimykat) | [MIT](LICENSE) — do what you like |
+| **Sprite art** | hand-drawn by [slimykat](https://github.com/slimykat) | © 2026, all rights reserved — [ask first](assets/LICENSE.md) |
+| **Voice clips** | © Toby Fox / Royal Sciences LLC | not included, not licensed here |
+
+The art is free to use *as part of running KawkawInChat*, monetized stream and
+all — that is what it is for. Reusing it elsewhere just needs an ask.
+[`assets/LICENSE.md`](assets/LICENSE.md) has the detail.
+
+Kawkaw, and the encounter this recreates, are from Deltarune by Toby Fox. This is
+an unofficial, non-commercial fan project with no affiliation or endorsement —
+made with thanks to Toby Fox and everyone who worked on Deltarune.
+
+Keep it free. Do not put it behind a paywall, tie it to Bits, sell it, or attach
+it to anything you charge for.
 
 ## How it works
 
