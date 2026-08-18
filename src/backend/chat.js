@@ -46,7 +46,11 @@ function connectChat(channel, onCommand) {
   }
 
   open();
-  return { close() { closed = true; try { ws.close(); } catch {} } };
+  return {
+    // For the status page: distinguishes "joined" from "retrying".
+    get connected() { return ws?.readyState === 1; },
+    close() { closed = true; try { ws.close(); } catch {} },
+  };
 }
 
 // One IRC line → { userId, name, action, privileged }, or null if it isn't ours.

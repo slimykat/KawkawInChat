@@ -14,27 +14,38 @@ const { connectChat } = require('./chat');
 const { connectEventSub } = require('./eventsub');
 const { createAuth } = require('./twitch');
 const store = require('./config');
+const setup = require('./setup');
 
 const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) ? v : d; };
 
-// .env holds only what the installer writes once: identity and secrets.
-// Everything tunable lives in config.json, edited through the config page.
-const CHANNEL = (process.env.CHANNEL || '').toLowerCase().replace(/^#/, '');
-const PORT    = num('PORT', 3000);
-const HOST    = '127.0.0.1';   // loopback only — never 0.0.0.0
-
-if (!CHANNEL) { console.error('KawKaw: set CHANNEL in .env'); process.exit(1); }
+// .env holds only what the installer sets once: identity and secrets. Everything
+// tunable lives in config.json, edited on the settings page.
+//
+// A missing CHANNEL is not fatal any more — it means "not set up yet". The server
+// still comes up and serves the setup page, which is the only way a streamer who
+// has never opened a terminal can be walked through this.
+let CHANNEL = setup.normalizeChannel(process.env.CHANNEL) || '';
+const PORT  = num('PORT', 3000);
+const HOST  = '127.0.0.1';   // loopback only — never 0.0.0.0
 
 let config = store.load();
 const engine = createEngine(store.engineConfig(config));
 
 // Only needed for the redeem trigger. Without these the backend still runs —
 // chat commands need no Twitch credentials at all.
-const auth = createAuth({
-  clientId: process.env.TWITCH_CLIENT_ID,
-  clientSecret: process.env.TWITCH_CLIENT_SECRET,
-  redirectUri: `http://localhost:${PORT}/auth/callback`,
-});
+//
+// Rebuilt rather than mutated when credentials change: createAuth closes over
+// clientId/clientSecret, so updating process.env alone would leave the old values
+// in the closure and the next Helix call would use them.
+let auth = buildAuth();
+
+function buildAuth() {
+  return createAuth({
+    clientId: process.env.TWITCH_CLIENT_ID,
+    clientSecret: process.env.TWITCH_CLIENT_SECRET,
+    redirectUri: `http://localhost:${PORT}/auth/callback`,
+  });
+}
 
 const redeemEnabled = () => config.trigger === 'redeem' || config.trigger === 'both';
 
@@ -43,7 +54,7 @@ const redeemEnabled = () => config.trigger === 'redeem' || config.trigger === 'b
 const REPO = path.resolve(__dirname, '../..');
 const MOUNTS = {
   '/overlay': path.join(REPO, 'src/overlay'),
-  '/config':  path.join(REPO, 'src/config'),
+  '/ui':      path.join(REPO, 'src/config'),
   '/assets':  path.join(REPO, 'assets'),
 };
 
@@ -77,6 +88,21 @@ function serveStatic(res, urlPath) {
   });
   return true;
 }
+
+// The two streamer-facing pages get real URLs rather than a path into the mount,
+// because these are the ones a person types or bookmarks.
+function serveFile(res, file) {
+  fs.readFile(file, (err, body) => {
+    if (err) { res.writeHead(404).end('Not found'); return; }
+    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' });
+    res.end(body);
+  });
+}
+
+const PAGES = {
+  '/':         path.join(REPO, 'src/config/index.html'),
+  '/settings': path.join(REPO, 'src/config/settings.html'),
+};
 
 // ── Loopback guard ────────────────────────────────────────────────────────────
 
@@ -145,13 +171,96 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // What the front page needs to tell the streamer what is and is not working.
+  // Deliberately never includes the client secret — only whether one is set.
+  if (urlPath === '/api/status') {
+    if (req.method !== 'GET') { res.writeHead(405).end('Method not allowed'); return; }
+    return sendJson(res, 200, status());
+  }
+
+  // First-run setup: writes .env and applies it live, so the streamer never has
+  // to find a text file or restart anything.
+  if (urlPath === '/api/setup') {
+    if (req.method !== 'POST') { res.writeHead(405).end('Method not allowed'); return; }
+    return readJson(req, res, (body) => handleSetup(res, body));
+  }
+
+  if (urlPath === '/auth/start') return handleAuthStart(res);
   if (urlPath === '/auth/callback') return handleAuthCallback(req, res);
 
-  if (urlPath === '/') { res.writeHead(302, { Location: '/overlay/' }); res.end(); return; }
+  if (PAGES[urlPath]) return serveFile(res, PAGES[urlPath]);
   if (serveStatic(res, urlPath)) return;
 
   res.writeHead(404).end('Not found');
 });
+
+// ── Status ────────────────────────────────────────────────────────────────────
+
+// Last thing EventSub told us, so the page can distinguish "armed" from "the
+// subscription failed" instead of both looking like silence.
+let redeemStatus = null;
+
+const fileExists = (f) => { try { return fs.existsSync(f); } catch { return false; } };
+
+function status() {
+  const assetDir = path.join(REPO, 'assets/kawkaw');
+  const sounds = (() => {
+    try { return fs.readdirSync(assetDir).some((f) => f.endsWith('.ogg')); }
+    catch { return false; }
+  })();
+
+  return {
+    setup: Boolean(CHANNEL),
+    channel: CHANNEL,
+    port: PORT,
+    chatConnected: Boolean(chat && chat.connected),
+    trigger: config.trigger,
+    rewardTitle: config.rewardTitle,
+    redeem: {
+      enabled: redeemEnabled(),
+      configured: auth.configured,
+      authorized: auth.hasTokens(),
+      status: redeemStatus,
+    },
+    // The overlay degrades silently when these are missing, which is exactly why
+    // the streamer needs to be told here instead of staring at an empty source.
+    assets: {
+      sprite: fileExists(path.join(assetDir, 'KawKawSprite_HandDrawn.png')),
+      sounds,
+    },
+  };
+}
+
+// ── First-run setup ───────────────────────────────────────────────────────────
+
+function handleSetup(res, body) {
+  const channel = setup.normalizeChannel(body?.channel);
+  if (!channel) {
+    return sendJson(res, 400, { error: 'That does not look like a Twitch channel name.' });
+  }
+
+  // Credentials are optional — the chat command trigger needs none. Blank means
+  // "leave what is already there"; the page sends null to clear them.
+  const patch = { CHANNEL: channel };
+  if (body.clientId !== undefined) patch.TWITCH_CLIENT_ID = String(body.clientId).trim();
+  if (body.clientSecret !== undefined) patch.TWITCH_CLIENT_SECRET = String(body.clientSecret).trim();
+
+  try { setup.writeEnv(patch); }
+  catch (err) { return sendJson(res, 500, { error: `Could not write .env: ${err.message}` }); }
+
+  // Apply without a restart: process.env feeds buildAuth, and the chat socket is
+  // reconnected against the new channel.
+  for (const [k, v] of Object.entries(patch)) process.env[k] = v;
+  const channelChanged = channel !== CHANNEL;
+  CHANNEL = channel;
+  auth = buildAuth();
+
+  if (channelChanged || !chat) startChat();
+  syncRedeemTrigger();
+
+  console.log(`KawKaw: setup saved — channel #${CHANNEL}`);
+  sendJson(res, 200, status());
+}
 
 // ── One-time OAuth for the redeem trigger ─────────────────────────────────────
 
@@ -162,6 +271,18 @@ let authState = null;
 function authorizeLink() {
   authState = crypto.randomBytes(16).toString('hex');
   return auth.authorizeUrl(authState);
+}
+
+// The Authorize button. Generates a fresh state and bounces to Twitch, so the
+// streamer never has to find the link in terminal output.
+function handleAuthStart(res) {
+  if (!auth.configured) {
+    res.writeHead(400, { 'Content-Type': 'text/plain' });
+    res.end('No Twitch application credentials yet — add them on the setup page first.');
+    return;
+  }
+  res.writeHead(302, { Location: authorizeLink() });
+  res.end();
 }
 
 function handleAuthCallback(req, res) {
@@ -223,7 +344,18 @@ function broadcastConfig() {
 
 // ── Chat → engine ─────────────────────────────────────────────────────────────
 
-connectChat(CHANNEL, ({ userId, name, action, privileged }) => {
+// Held so setup can point it at a different channel without a restart.
+let chat = null;
+
+// No channel yet means the streamer has not finished setup; there is nothing to
+// join, and the setup page is what fixes that.
+function startChat() {
+  if (chat) { chat.close(); chat = null; }
+  if (!CHANNEL) return;
+  chat = connectChat(CHANNEL, onChatCommand);
+}
+
+function onChatCommand({ userId, name, action, privileged }) {
   if (action !== 'kawkaw') { engine.command(userId, action); return; }
 
   // Logged the same way redemptions are: without this there is no way to tell a
@@ -237,7 +369,7 @@ connectChat(CHANNEL, ({ userId, name, action, privileged }) => {
   } else {
     console.log(`KawKaw: ${name} ran !kawkaw — already on screen, ignored`);
   }
-});
+}
 
 // ── Redeem → engine ───────────────────────────────────────────────────────────
 
@@ -246,6 +378,7 @@ let eventsub = null;
 async function syncRedeemTrigger() {
   if (!redeemEnabled()) {
     if (eventsub) { eventsub.close(); eventsub = null; console.log('KawKaw: redeem trigger off'); }
+    redeemStatus = null;
     return;
   }
   if (eventsub) return;   // already listening
@@ -285,6 +418,7 @@ async function syncRedeemTrigger() {
       }
     },
     onStatus: (status, detail) => {
+      redeemStatus = status;
       if (status === 'connected') console.log('KawKaw: EventSub connected, subscribing…');
       else if (status === 'subscribed') console.log(`KawKaw: redeem trigger armed on #${CHANNEL} — ` +
         (config.rewardTitle ? `rewards matching "${config.rewardTitle}"` : 'any Channel Points reward'));
@@ -309,9 +443,20 @@ setInterval(() => {
 process.on('uncaughtException', (err) => console.error('KawKaw: uncaught —', err));
 
 server.listen(PORT, HOST, () => {
-  console.log(`KawKaw backend on http://${HOST}:${PORT}  (channel: #${CHANNEL})`);
-  console.log(`  overlay  http://${HOST}:${PORT}/overlay/`);
-  console.log(`  config   http://${HOST}:${PORT}/config/config.html`);
-  console.log('  config  ', config);
+  const home = `http://${HOST}:${PORT}/`;
+  console.log(CHANNEL
+    ? `KawKaw is running on ${home}  (channel: #${CHANNEL})`
+    : `KawKaw needs setting up — open ${home}`);
+  console.log(`  overlay (OBS)  ${home}overlay/`);
+  console.log(`  settings       ${home}settings`);
+
+  startChat();
   syncRedeemTrigger();
+
+  // Only when launched from KawKaw.command. `npm run dev` restarts on every save,
+  // and a browser tab per save is not help.
+  if (process.env.KAWKAW_OPEN === '1') {
+    // Failure here is cosmetic — the URL is on the line above either way.
+    require('child_process').exec(`open ${home}`, () => {});
+  }
 });
