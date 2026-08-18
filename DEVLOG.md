@@ -241,3 +241,28 @@ indistinguishable from being broken.
 **Missing is not the same as broken.** Audio absence is the *normal* state of a
 fresh clone, so it reports once as a fact rather than eight `console.warn`s, and
 the volume control hides rather than sitting there doing nothing.
+
+**Advice you cannot follow is worse than no advice.** The first launch from the
+v1.0 release ZIP hit *"port 3000 is already in use — KawKaw is probably already
+running. Close the other KawKaw window."* Every word of it was true and none of it
+was actionable: the occupant was a backend from another copy of the project,
+orphaned to PID 1 the night before, with no window left to close. Finding that out
+took `lsof`. A streamer has no next step at all.
+
+`EADDRINUSE` was never enough to say it, because it reports that a port is taken
+and nothing about by whom. The fix was to stop learning about the conflict from the
+failure and ask first — probe for a KawKaw before binding, and treat the two
+answers as the different situations they are. Already running is not an error: it
+is a second double-click, and it deserves the page the first one is serving. Held
+by something else is not KawKaw's business to resolve by force: it deserves a
+question, and remembering the answer.
+
+**Detection needs a shared address, and proof.** A record inside the checkout would
+never have seen the case that produced the bug — the ZIP in `~/Downloads` and the
+clone on the Desktop are different folders. It has to live in one per-user location
+outside both. And it has to be treated as a rumour: the record survives exactly the
+force-kill that strands the process, so a launch that believed it would refuse to
+start for a backend that no longer exists. An HTTP probe is the only thing that
+proves an instance is there — which also means recognising the shape v1.0 returned,
+since the instance most likely to be holding your port is the one built before the
+marker existed.

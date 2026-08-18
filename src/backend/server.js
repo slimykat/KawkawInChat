@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
+const readline = require('readline');
 const { WebSocketServer } = require('ws');
 const { createEngine } = require('./engine');
 const { connectChat } = require('./chat');
@@ -15,6 +16,7 @@ const { connectEventSub } = require('./eventsub');
 const { createAuth } = require('./twitch');
 const store = require('./config');
 const setup = require('./setup');
+const instance = require('./instance');
 
 const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) ? v : d; };
 
@@ -25,8 +27,13 @@ const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite
 // still comes up and serves the setup page, which is the only way a streamer who
 // has never opened a terminal can be walked through this.
 let CHANNEL = setup.normalizeChannel(process.env.CHANNEL) || '';
-const PORT  = num('PORT', 3000);
 const HOST  = '127.0.0.1';   // loopback only — never 0.0.0.0
+
+// The port asked for, not necessarily the one we end up on: when another program
+// already holds it, boot() asks the streamer for a different one and this moves.
+// Everything that derives a URL — the redirect, the front page, the OBS link —
+// reads it after that, never before.
+let PORT = num('PORT', 3000);
 
 let config = store.load();
 const engine = createEngine(store.engineConfig(config));
@@ -210,6 +217,9 @@ function status() {
   })();
 
   return {
+    // What a probing launch looks for. Older builds have no marker, so the shape
+    // below is recognised too — see isKawKaw in instance.js.
+    app: 'kawkaw',
     setup: Boolean(CHANNEL),
     channel: CHANNEL,
     port: PORT,
@@ -319,7 +329,13 @@ const wss = new WebSocketServer({ server });
 // ws forwards the http server's errors onto itself, and an 'error' with no
 // listener is thrown rather than delivered. Without this, a websocket failure
 // escapes as an uncaught exception instead of being logged like everything else.
-wss.on('error', (err) => console.error('KawKaw: websocket server error —', err.message));
+//
+// A refused bind arrives here too, and boot() is already explaining that one in
+// plain language — printing the raw EADDRINUSE first would bury it.
+wss.on('error', (err) => {
+  if (!bound && err.code === 'EADDRINUSE') return;
+  console.error('KawKaw: websocket server error —', err.message);
+});
 
 wss.on('connection', (ws, req) => {
   if (!hostAllowed(req)) { ws.close(1008, 'Forbidden'); return; }
@@ -447,29 +463,131 @@ setInterval(() => {
 // An unhandled throw here would take the overlay down mid-stream; log and carry on.
 process.on('uncaughtException', (err) => console.error('KawKaw: uncaught —', err));
 
-// Failing to start is the one error that must not be swallowed: the catch-all
-// above would log EADDRINUSE and then leave a server that never bound sitting
-// there looking like it is running.
+// ── Startup ───────────────────────────────────────────────────────────────────
+
+// Set once the port is ours, so a bind still being negotiated can be kept quiet
+// without silencing a real failure later.
+let bound = false;
+
+// Boot asks two questions before binding anything: is a KawKaw already running
+// somewhere, and if not, is the port we want actually free? Both have answers a
+// streamer can act on, which a bare EADDRINUSE never did — it said something holds
+// the port, but never what, and "close the other window" is no help when the window
+// is already gone.
+async function boot() {
+  const running = await instance.findRunning(PORT);
+  if (running) return pointAtRunning(running);
+
+  let port = PORT;
+  for (;;) {
+    try { await listen(port); break; }
+    catch (err) {
+      if (err.code !== 'EADDRINUSE') {
+        console.error('KawKaw: could not start —', err.message);
+        // 2, not 1: tells KawKaw.command the problem has already been explained in
+        // plain language, so it holds the window without adding "stopped unexpectedly".
+        process.exit(2);
+      }
+      // findRunning already ruled out a KawKaw here, so whatever holds this port
+      // belongs to another program. KawKaw moves aside; it never evicts.
+      port = await askForPort(port);
+    }
+  }
+
+  if (port !== PORT) {
+    PORT = port;
+    auth = buildAuth();   // the redirect URL is built from the port
+    savePort(port);
+  }
+
+  bound = true;
+  // Only now, holding the port: this is what the next launch will find.
+  instance.write({ port: PORT, dir: REPO });
+  announce();
+}
+
+// Someone launched twice — often the ZIP in Downloads while the checkout on the
+// Desktop is already serving. Send them to the one that is running instead of
+// failing next to it.
+function pointAtRunning(running) {
+  const home = `http://${HOST}:${running.port}/`;
+  console.log(`KawKaw is already running on ${home}`);
+  if (running.dir) {
+    console.log(`  started from ${running.dir}${running.pid ? `  (PID ${running.pid})` : ''}`);
+  }
+  console.log('  Nothing to do here. To stop that one, close the window it is running');
+  console.log('  in — or quit it from Activity Monitor if the window is already gone.');
+
+  // 3, not 0 or 2: nothing is wrong, and KawKaw.command has to tell this apart from
+  // a backend that started and then fell over.
+  if (process.env.KAWKAW_OPEN !== '1') return process.exit(3);
+
+  // Leave once the browser is on its way, but never wait on `open` forever.
+  require('child_process').exec(`open ${home}`, () => process.exit(3));
+  setTimeout(() => process.exit(3), 2000).unref();
+}
+
+// One attempt to bind, as a promise.
 //
 // Prepended because ws registered its own error listener first, and that one
-// re-emits on the WebSocketServer — an appended handler is never reached.
-// Detached once listening, so a later error still cannot take the overlay down.
-function onStartupError(err) {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`KawKaw: port ${PORT} is already in use — KawKaw is probably already running.`);
-    console.error('  Close the other KawKaw window, or set a different PORT in src/backend/.env.');
-  } else {
-    console.error('KawKaw: could not start —', err.message);
-  }
-  // 2, not 1: tells KawKaw.command the problem has already been explained in
-  // plain language, so it holds the window without adding "stopped unexpectedly".
-  process.exit(2);
+// re-emits on the WebSocketServer — an appended handler is never reached. Both
+// handlers are one-shot: a later error cannot take the overlay down, and a retry on
+// another port starts clean. A refused listen leaves the server unbound and
+// reusable, so the retry is the same server.
+function listen(port) {
+  return new Promise((resolve, reject) => {
+    const onError = (err) => { server.off('listening', onListening); reject(err); };
+    const onListening = () => { server.off('error', onError); resolve(); };
+    server.prependOnceListener('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, HOST);
+  });
 }
-server.prependOnceListener('error', onStartupError);
 
-server.listen(PORT, HOST, () => {
-  server.off('error', onStartupError);
+// The manual assignment. Only reached when the port belongs to another program, and
+// only ever a question: nothing is killed to make room for us.
+async function askForPort(busy) {
+  console.error(`KawKaw: port ${busy} is in use by another program (not KawKaw).`);
 
+  // nodemon, CI, or any launch with stdin detached: there is nobody to answer, and a
+  // prompt nobody can see is indistinguishable from a hang.
+  if (!process.stdin.isTTY) {
+    console.error('  Start KawKaw from a terminal to choose another port, or set PORT in src/backend/.env.');
+    process.exit(2);
+  }
+
+  for (;;) {
+    const answer = await ask('  Enter a different port for KawKaw (1024-65535), or press return to quit: ');
+    if (!answer.trim()) { console.error('KawKaw: stopped — no port chosen.'); process.exit(2); }
+    const port = instance.normalizePort(answer);
+    if (port) return port;
+    console.error('  That is not a port between 1024 and 65535.');
+  }
+}
+
+function ask(question) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(question, (answer) => { rl.close(); resolve(answer); });
+  });
+}
+
+// Remember the choice, so this is asked once rather than at every launch — and say
+// plainly what moving the port changed, because both of these are URLs the streamer
+// has already written down somewhere else.
+function savePort(port) {
+  try { setup.writeEnv({ PORT: String(port) }); }
+  catch (err) {
+    console.warn(`KawKaw: running on ${port}, but could not save it to .env — ${err.message}`);
+    return;
+  }
+  console.log(`KawKaw: saved PORT=${port} to src/backend/.env — the next launch uses it.`);
+  console.log(`  OBS Browser Source URL is now  http://${HOST}:${port}/overlay/`);
+  console.log("  Using the Channel Points trigger? Update your Twitch application's");
+  console.log(`  OAuth Redirect URL to  http://localhost:${port}/auth/callback`);
+}
+
+function announce() {
   const home = `http://${HOST}:${PORT}/`;
   console.log(CHANNEL
     ? `KawKaw is running on ${home}  (channel: #${CHANNEL})`
@@ -486,4 +604,18 @@ server.listen(PORT, HOST, () => {
     // Failure here is cosmetic — the URL is on the line above either way.
     require('child_process').exec(`open ${home}`, () => {});
   }
+}
+
+// The record stands for exactly as long as we hold the port. A force-kill leaves it
+// behind, which is why findRunning verifies one before believing it; everything
+// short of that is cleaned up here. The signal handlers exist so that 'exit' runs at
+// all — the defaults tear the process down without it.
+process.on('exit', () => instance.clear());
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => process.exit(0));
+
+// Nothing in boot() is expected to throw, and a rejection that escaped here would
+// be a silent no-start — the one failure mode this whole path exists to remove.
+boot().catch((err) => {
+  console.error('KawKaw: could not start —', err.message);
+  process.exit(2);
 });

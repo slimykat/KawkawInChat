@@ -119,6 +119,26 @@ Requests to the loopback server are accepted only when all of these hold:
 
 The backend holds a single `config` and a single `state`, serving exactly **one channel**. Each streamer runs their own instance. Do not point two channels at one backend; they would share a single KawKaw session.
 
+### Startup — one instance, and a port it can have
+
+One backend per streamer means the second launch is a mistake to be handled, not an error to be reported. `EADDRINUSE` alone cannot do that: it says the port is taken but never by what, and the advice it justified — *close the other KawKaw window* — is useless when the window is what went missing. A force-quit Terminal leaves the backend orphaned, and the streamer sees a dead end.
+
+So boot asks before it binds:
+
+1. **Is a KawKaw already running?** If yes: name its port and the folder it was launched from, open its page, exit **3**. Nothing is started.
+2. **Otherwise take the configured port** (`PORT`, default 3000).
+3. **Refused?** Step 1 already ruled out KawKaw, so the holder is another program. Ask for a different port in the terminal, then remember it.
+
+**Finding the other instance.** A running backend records `{ port, pid, dir, startedAt }` in one shared per-user file — `~/Library/Application Support/KawKaw/instance.json` on macOS, `%APPDATA%` on Windows, `$XDG_STATE_HOME` elsewhere. It is deliberately outside any checkout: the copy unzipped into `~/Downloads` and the clone on the Desktop are two folders and one KawKaw, and only a shared location lets either see the other. `dir` is the field that answers *which copy is running*.
+
+The record is a hint, never an authority — a force-killed backend leaves one behind. Nothing is believed until `GET /api/status` on that port answers as KawKaw: `app: "kawkaw"`, or the shape v1.0 already returned, so an instance predating the marker is still recognised rather than mistaken for a stranger. A record that fails to answer is ignored and overwritten. With no record at all, ports 3000–3009 are probed in parallel with a 300 ms budget.
+
+**Nothing is ever signalled.** No `kill`, no `lsof`, not even a signal-0 liveness check. A port held by another program is worked around, never taken; aliveness is only ever proven by a KawKaw answering an HTTP request.
+
+**The manual port.** Asked for on the terminal, because there is no page to ask from — the port is what a page would need. The answer is validated (1024–65535), written to `.env` through the same writer the setup page uses, and its consequences said out loud: the OBS Browser Source URL moves, and so does the OAuth Redirect URL the Twitch application must be updated to match. With no TTY — `npm run dev`, CI, anything with stdin detached — there is nobody to ask, so it prints and exits rather than hanging on a prompt no one can see.
+
+Exit codes carry the difference to `KawKaw.command`: **2** means the problem was already explained in plain language (hold the window), **3** means a KawKaw was already running and the browser was sent to it (nothing is wrong, say nothing more).
+
 ---
 
 ## Game Flow
@@ -308,7 +328,7 @@ Configuration lives in two places, split by how often it changes.
 | **Secrets and identity** | `.env` | Once, at install |
 | **Everything tunable** | settings page → backend | Any time |
 
-`.env` holds only what the installer writes once: `CHANNEL`, `PORT`, and the Twitch application credentials for the redeem trigger. No game tuning lives there.
+`.env` holds only what the installer writes once: `CHANNEL`, `PORT`, and the Twitch application credentials for the redeem trigger. No game tuning lives there. `PORT` is also written by the startup prompt, on the one occasion it has to move.
 
 ### Game-logic config
 

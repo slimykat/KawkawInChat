@@ -30,11 +30,19 @@ You need [Node.js](https://nodejs.org) installed — the LTS version is fine.
    browser is quarantined. Right-click `KawKaw.command` and choose **Open**, and if
    macOS still says no, allow it once in System Settings → Privacy & Security →
    **Open Anyway**. Cloning avoids this entirely.
+
+   If KawKaw is already running — you double-clicked twice, or a window got
+   force-quit and left the backend behind it — this finds the one that is running,
+   tells you which folder it started from, and opens its page instead of failing
+   next to it. And if port 3000 belongs to some *other* program, it asks you for a
+   different port in the Terminal window and remembers your answer.
 3. Type your Twitch channel name and press **Save and start**.
 4. Copy the OBS URL shown on that page into a new **Browser Source** in OBS, and
    set its size to your canvas size.
 
 Keep the Terminal window open while you stream — closing it stops KawkawInChat.
+(Force-quitting it can leave the backend running; double-click again and KawKaw
+will tell you where that one is.)
 
 Anyone in chat can now type `!kawkaw` to summon it. Position, sprite size, how
 hard chat has to push, and session length are all on the **Settings** page.
