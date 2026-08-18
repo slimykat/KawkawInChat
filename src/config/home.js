@@ -54,8 +54,10 @@ function render(s) {
   if (!s.assets.sprite) {
     rows.push(bad('No sprite sheet — put KawKawSprite_HandDrawn.png in assets/kawkaw/'));
   }
+  // Not a warning: shipping without audio is the normal state of a fresh clone,
+  // so this states the fact and sends them to the README rather than nagging.
   if (!s.assets.sounds) {
-    rows.push(warn('No sound files in assets/kawkaw/ — KawKaw will be silent'));
+    rows.push(info('Running silent — no voice clips installed (see the README)'));
   }
 
   rows.push(triggerRow(s));
@@ -65,6 +67,7 @@ function render(s) {
 }
 
 const ok   = (t) => `<li>✅ ${esc(t)}</li>`;
+const info = (t) => `<li>🔈 ${esc(t)}</li>`;
 const warn = (t) => `<li>⚠️ ${esc(t)}</li>`;
 const bad  = (t) => `<li>❌ ${esc(t)}</li>`;
 

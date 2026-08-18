@@ -129,6 +129,7 @@ async function load() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     populateForm(await res.json());
     drawPreview();
+    await syncAudioSection();
     setMode('Connected to the backend');
   } catch (e) {
     setMode('Backend not reachable — start it, then reload');
@@ -155,6 +156,20 @@ async function onSave() {
   } catch (e) {
     showStatus('Could not save: ' + e.message, 'error');
   }
+}
+
+// A volume control over guaranteed silence is a knob that does nothing, so the
+// whole section goes away when no clips are installed. The backend's fs check is
+// the authority here — the overlay is a different document and cannot be asked.
+async function syncAudioSection() {
+  const section = document.getElementById('audio-section');
+  if (!section) return;
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) return;                       // leave it visible rather than guess
+    const { assets } = await res.json();
+    section.classList.toggle('hidden', !assets?.sounds);
+  } catch { /* same — a failed check should not hide a working control */ }
 }
 
 function setMode(text) { document.getElementById('mode-note').textContent = text; }

@@ -35,19 +35,34 @@ function setVolume(v) {
   if (masterGain) masterGain.gain.value = volume;
 }
 
+// Running with no sound files is a supported state, not a fault: the repo ships
+// without audio, so a fresh clone has none. A 404 is therefore reported once, as
+// a fact, and only a file that exists but will not decode is a real warning.
 async function preload() {
   ensureContext();
+  // Local, not module-scope: preload can run more than once, and a running total
+  // would report more missing clips than exist.
+  let missing = 0;
   await Promise.all(
     Object.entries(AUDIO_FILES).map(async ([name, url]) => {
+      let res;
       try {
-        const res = await fetch(url);
-        const raw = await res.arrayBuffer();
-        buffers[name] = await audioCtx.decodeAudioData(raw);
+        res = await fetch(url);
       } catch (e) {
-        console.warn(`KawKaw audio: failed to load ${name}`, e);
+        console.warn(`KawKaw audio: could not fetch ${name}`, e);
+        return;
+      }
+      if (!res.ok) { missing++; return; }
+      try {
+        buffers[name] = await audioCtx.decodeAudioData(await res.arrayBuffer());
+      } catch (e) {
+        console.warn(`KawKaw audio: ${name} is present but would not decode`, e);
       }
     })
   );
+  if (missing) {
+    console.log(`KawKaw audio: ${missing}/${Object.keys(AUDIO_FILES).length} clips not installed — running silent`);
+  }
 }
 
 // playbackRate = 2^(-semitones/12). Each consecutive shoo = -1 semitone.
