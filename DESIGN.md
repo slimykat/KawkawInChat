@@ -1,4 +1,4 @@
-# KawKaw — Design Document
+# KawkawInChat — Design Document
 
 A Twitch chat engagement overlay inspired by the KawKaw enemy encounter in Deltarune Chapter 5. Viewers type `!call` or `!shoo` in chat to push a single meter between two outcomes — **Lick** (KawKaw reaches the streamer) and **Flee** (KawKaw is chased off). Runs as an OBS Browser Source fed by a small backend on the streamer's own machine.
 
@@ -28,10 +28,11 @@ A Twitch chat engagement overlay inspired by the KawKaw enemy encounter in Delta
 ## Project Structure
 
 ```
-NyonClicker/
+KawkawInChat/
+├── KawKaw.command                      double-click launcher (macOS)
 ├── assets/kawkaw/
-│   ├── (Chapter 5) - Kawkaw.png        sprite sheet (573×533px, by times/igbt)
-│   ├── Kawkaw_voiceclip_happy_1.wav.ogg
+│   ├── KawKawSprite_HandDrawn.png      sprite sheet (3600×3600px, original art — tracked)
+│   ├── Kawkaw_voiceclip_happy_1.wav.ogg     Deltarune audio — all .ogg gitignored
 │   ├── Kawkaw_voiceclip_happy_2.wav.ogg
 │   ├── Kawkaw_voiceclip_sad_short.wav.ogg
 │   ├── Kawkaw_voiceclip_sad_1.wav.ogg
